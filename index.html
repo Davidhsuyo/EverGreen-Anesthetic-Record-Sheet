@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evergreen 獸醫麻醉紀錄表 (8頁完整版)</title>
+    <title>Evergreen 獸醫麻醉紀錄表 (8頁全數據圖表版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* 讓最外層容器可以盡量利用螢幕寬度 */
@@ -36,12 +36,12 @@
         .page-view { display: none; }
         .page-view.active { display: block; }
 
-        /* 💡 新增：圖表折線控制面板樣式 */
-        .chart-controls-panel { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; }
+        /* 圖表折線控制面板 (加入 flex-wrap 以免按鈕太多跑版) */
+        .chart-controls-panel { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; }
         .line-toggle-btn { padding: 4px 15px; border: 2px solid #718096; background: white; color: #4a5568; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s; }
         .line-toggle-btn.active { background: #4a5568; color: white; border-color: #4a5568; }
         
-        .print-only-header { display: none; } /* 平常隱藏，僅在列印分頁顯示 */
+        .print-only-header { display: none; } 
 
         /* --- UCD 表單主體 --- */
         .ucd-form-container { background: white; border: 3px solid #000; box-shadow: 0 10px 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; width: 100%; }
@@ -120,7 +120,6 @@
             @page { size: A3 landscape; margin: 10mm; }
             body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             
-            /* 💡 將原本不印出的元素隱藏，包含新的控制面板 */
             .input-panel, .bottom-export-panel, .btn-toggle-all, .btn-toggle-block, .btn-del, .drug-selector, .pagination-panel, .chart-controls-panel { display: none !important; }
             
             .app-container { max-width: 100%; }
@@ -433,11 +432,16 @@
         </div>
 
         <div class="chart-controls-panel">
-            <span style="font-size: 13px; font-weight: bold; color: #4a5568;">圖表折線顯示控制：</span>
+            <span style="font-size: 13px; font-weight: bold; color: #4a5568;">圖表折線控制：</span>
             <button class="line-toggle-btn" onclick="toggleLine(0, this)">Pulse (心率)</button>
-            <button class="line-toggle-btn" onclick="toggleLine(1, this)">Sys BP (收縮壓)</button>
-            <button class="line-toggle-btn" onclick="toggleLine(2, this)">Dia BP (舒張壓)</button>
-            <button class="line-toggle-btn" onclick="toggleLine(3, this)">Mean BP (平均血壓)</button>
+            <button class="line-toggle-btn" onclick="toggleLine(1, this)">Sys BP</button>
+            <button class="line-toggle-btn" onclick="toggleLine(2, this)">Dia BP</button>
+            <button class="line-toggle-btn" onclick="toggleLine(3, this)">Mean BP</button>
+            
+            <button class="line-toggle-btn" onclick="toggleLine(4, this)">SpO2 (血氧)</button>
+            <button class="line-toggle-btn" onclick="toggleLine(5, this)">ETCO2 (吐氣末)</button>
+            <button class="line-toggle-btn" onclick="toggleLine(6, this)">RR (呼吸)</button>
+            <button class="line-toggle-btn" onclick="toggleLine(7, this)">Temp (體溫)</button>
         </div>
         
         <div id="grids-wrapper" style="width: 100%;"></div>
@@ -540,7 +544,7 @@ const TOTAL_PAGES = 8;
 const SLOTS_PER_PAGE = 30;
 let currentGlobalSlot = 0; 
 let charts = [];
-let timeInputEdited = false; // 追蹤使用者是否有手動修改時間
+let timeInputEdited = false;
 
 const topRowDefs = [
     { id: 'row-time', name: 'Time', bg: '#e2e8f0' },
@@ -563,7 +567,6 @@ const bottomRowDefs = [
     { id: 'row-cri', name: 'CRI', height: '25px', cellStyle: 'white-space: normal; word-break: break-all; line-height: 1.1; padding: 2px;' }
 ];
 
-// 動態建立 8 頁 DOM 結構
 function buildMultiPageGrids() {
     const wrapper = document.getElementById('grids-wrapper');
     let gridHTML = '';
@@ -594,22 +597,28 @@ function buildMultiPageGrids() {
     wrapper.innerHTML = gridHTML;
 }
 
-// 建立 8 個獨立的 Chart 實例
+// 建立 8 個獨立的 Chart 實例 (包含新增的 SpO2, ETCO2, RR, Temp)
 function initCharts() {
     for (let p = 1; p <= TOTAL_PAGES; p++) {
         const ctx = document.getElementById(`anesthesiaChart-${p}`).getContext('2d');
         const emptyData = () => Array(SLOTS_PER_PAGE).fill(null); 
         
-        // 💡 調整：為資料點與折線設定同樣的顏色，並加上虛線 (borderDash) 與細線 (borderWidth) 設定，但預設隱藏 (showLine: false)
         const chart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: Array(SLOTS_PER_PAGE).fill(''),
                 datasets: [
+                    // 原本的 4 個
                     { label: 'Pulse', data: emptyData(), borderColor: 'rgba(255, 99, 132, 1)', backgroundColor: 'rgba(255, 99, 132, 1)', pointStyle: 'circle', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'Sys BP', data: emptyData(), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 1)', pointStyle: 'triangle', pointRadius: 5, rotation: 180, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'Dia BP', data: emptyData(), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 1)', pointStyle: 'triangle', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
-                    { label: 'Mean BP', data: emptyData(), borderColor: 'rgba(75, 192, 192, 1)', backgroundColor: 'rgba(75, 192, 192, 1)', pointStyle: 'crossRot', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 }
+                    { label: 'Mean BP', data: emptyData(), borderColor: 'rgba(75, 192, 192, 1)', backgroundColor: 'rgba(75, 192, 192, 1)', pointStyle: 'crossRot', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    
+                    // 💡 新增的 4 個 (給予特殊顏色與符號)
+                    { label: 'SpO2', data: emptyData(), borderColor: '#805ad5', backgroundColor: '#805ad5', pointStyle: 'rect', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'ETCO2', data: emptyData(), borderColor: '#38a169', backgroundColor: '#38a169', pointStyle: 'rectRot', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'RR', data: emptyData(), borderColor: '#dd6b20', backgroundColor: '#dd6b20', pointStyle: 'star', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'Temp', data: emptyData(), borderColor: '#d53f8c', backgroundColor: '#d53f8c', pointStyle: 'cross', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 }
                 ]
             },
             options: {
@@ -625,8 +634,8 @@ function initCharts() {
     }
 }
 
-// 💡 新增：圖表折線獨立開關邏輯
-let lineVisibility = [false, false, false, false];
+// 💡 擴展：圖表折線獨立開關邏輯 (總共 8 個開關)
+let lineVisibility = [false, false, false, false, false, false, false, false];
 function toggleLine(dsIndex, btn) {
     lineVisibility[dsIndex] = !lineVisibility[dsIndex];
     if(lineVisibility[dsIndex]) {
@@ -634,7 +643,6 @@ function toggleLine(dsIndex, btn) {
     } else {
         btn.classList.remove('active');
     }
-    
     // 同步更新 8 個分頁的圖表
     charts.forEach(chart => {
         chart.data.datasets[dsIndex].showLine = lineVisibility[dsIndex];
@@ -649,7 +657,7 @@ window.onload = function() {
     buildMultiPageGrids();
     initCharts();
 
-    // 智慧時間追蹤系統初始化
+    // 智慧時間追蹤
     const timeInput = document.getElementById('record-time');
     const updateToNow = () => {
         const now = new Date();
@@ -657,16 +665,10 @@ window.onload = function() {
     };
     updateToNow();
 
-    // 監聽使用者是否手動修改時間
-    timeInput.addEventListener('input', () => {
-        timeInputEdited = true;
-    });
+    timeInput.addEventListener('input', () => { timeInputEdited = true; });
 
-    // 每 30 秒自動檢查一次，若無手動修改，則保持當下最新時間
     setInterval(() => {
-        if (!timeInputEdited) {
-            updateToNow();
-        }
+        if (!timeInputEdited) { updateToNow(); }
     }, 30000);
 };
 
@@ -696,36 +698,61 @@ function addRecord() {
     let localSlot = currentGlobalSlot % SLOTS_PER_PAGE;
     switchPage(targetPage);
 
+    // 抓取上方輸入的值
+    const anesVal = document.getElementById('anes').value || '-';
+    const o2Val = document.getElementById('o2').value || '-';
+    const spo2Val = document.getElementById('spo2').value || '-';
+    const etco2Val = document.getElementById('etco2').value || '-';
+    const peakVal = document.getElementById('peak').value || '-';
+    const tvVal = document.getElementById('tv').value || '-';
+    const rrVal = document.getElementById('rr').value || '-';
+    const tempVal = document.getElementById('temp').value || '-';
+
+    // 填入表格上半段文字
     document.getElementById(`row-time-${currentGlobalSlot}`).textContent = timeStr;
-    document.getElementById(`row-anes-${currentGlobalSlot}`).textContent = document.getElementById('anes').value || '-';
-    document.getElementById(`row-o2-${currentGlobalSlot}`).textContent = document.getElementById('o2').value || '-';
-    document.getElementById(`row-spo2-${currentGlobalSlot}`).textContent = document.getElementById('spo2').value || '-';
-    document.getElementById(`row-etco2-${currentGlobalSlot}`).textContent = document.getElementById('etco2').value || '-';
-    document.getElementById(`row-peak-${currentGlobalSlot}`).textContent = document.getElementById('peak').value || '-';
-    document.getElementById(`row-tv-${currentGlobalSlot}`).textContent = document.getElementById('tv').value || '-';
-    document.getElementById(`row-rr-${currentGlobalSlot}`).textContent = document.getElementById('rr').value || '-';
+    document.getElementById(`row-anes-${currentGlobalSlot}`).textContent = anesVal;
+    document.getElementById(`row-o2-${currentGlobalSlot}`).textContent = o2Val;
+    document.getElementById(`row-spo2-${currentGlobalSlot}`).textContent = spo2Val;
+    document.getElementById(`row-etco2-${currentGlobalSlot}`).textContent = etco2Val;
+    document.getElementById(`row-peak-${currentGlobalSlot}`).textContent = peakVal;
+    document.getElementById(`row-tv-${currentGlobalSlot}`).textContent = tvVal;
+    document.getElementById(`row-rr-${currentGlobalSlot}`).textContent = rrVal;
 
-    const pulse = document.getElementById('pulse').value ? Number(document.getElementById('pulse').value) : null;
-    const sys = document.getElementById('sysBP').value ? Number(document.getElementById('sysBP').value) : null;
-    const dia = document.getElementById('diaBP').value ? Number(document.getElementById('diaBP').value) : null;
-    const mean = document.getElementById('meanBP').value ? Number(document.getElementById('meanBP').value) : null;
+    // 抓取血壓心跳數值
+    const pulseNum = document.getElementById('pulse').value ? Number(document.getElementById('pulse').value) : null;
+    const sysNum = document.getElementById('sysBP').value ? Number(document.getElementById('sysBP').value) : null;
+    const diaNum = document.getElementById('diaBP').value ? Number(document.getElementById('diaBP').value) : null;
+    const meanNum = document.getElementById('meanBP').value ? Number(document.getElementById('meanBP').value) : null;
 
-    document.getElementById(`row-pulse-${currentGlobalSlot}`).textContent = pulse !== null ? pulse : '-';
-    document.getElementById(`row-sysbp-${currentGlobalSlot}`).textContent = sys !== null ? sys : '-';
-    document.getElementById(`row-diabp-${currentGlobalSlot}`).textContent = dia !== null ? dia : '-';
-    document.getElementById(`row-meanbp-${currentGlobalSlot}`).textContent = mean !== null ? mean : '-';
+    // 💡 抓取新增的四大數值作為數字 (以利繪製圖表)
+    const spo2Num = document.getElementById('spo2').value ? Number(document.getElementById('spo2').value) : null;
+    const etco2Num = document.getElementById('etco2').value ? Number(document.getElementById('etco2').value) : null;
+    const rrNum = document.getElementById('rr').value ? Number(document.getElementById('rr').value) : null;
+    const tempNum = document.getElementById('temp').value ? Number(document.getElementById('temp').value) : null;
 
+    // 填入表格下半段文字 (血壓心跳)
+    document.getElementById(`row-pulse-${currentGlobalSlot}`).textContent = pulseNum !== null ? pulseNum : '-';
+    document.getElementById(`row-sysbp-${currentGlobalSlot}`).textContent = sysNum !== null ? sysNum : '-';
+    document.getElementById(`row-diabp-${currentGlobalSlot}`).textContent = diaNum !== null ? diaNum : '-';
+    document.getElementById(`row-meanbp-${currentGlobalSlot}`).textContent = meanNum !== null ? meanNum : '-';
+
+    // 💡 填入 Chart.js 圖表資料點 (包含新增的 4 個)
     let currentChart = charts[targetPage - 1];
-    currentChart.data.datasets[0].data[localSlot] = pulse;
-    currentChart.data.datasets[1].data[localSlot] = sys;
-    currentChart.data.datasets[2].data[localSlot] = dia;
-    currentChart.data.datasets[3].data[localSlot] = mean;
+    currentChart.data.datasets[0].data[localSlot] = pulseNum;
+    currentChart.data.datasets[1].data[localSlot] = sysNum;
+    currentChart.data.datasets[2].data[localSlot] = diaNum;
+    currentChart.data.datasets[3].data[localSlot] = meanNum;
+    currentChart.data.datasets[4].data[localSlot] = spo2Num;
+    currentChart.data.datasets[5].data[localSlot] = etco2Num;
+    currentChart.data.datasets[6].data[localSlot] = rrNum;
+    currentChart.data.datasets[7].data[localSlot] = tempNum;
     currentChart.update();
 
+    // 填入底部文字
     const fluidType = document.getElementById('fluid-type').value;
     const fluidAmt = document.getElementById('fluids').value;
     document.getElementById(`row-fluids-${currentGlobalSlot}`).textContent = fluidAmt !== '' ? `${fluidType} ${fluidAmt}` : '-';
-    document.getElementById(`row-temp-${currentGlobalSlot}`).textContent = document.getElementById('temp').value || '-';
+    document.getElementById(`row-temp-${currentGlobalSlot}`).textContent = tempVal;
     const criElem = document.getElementById('cri');
     document.getElementById(`row-cri-${currentGlobalSlot}`).textContent = (criElem && criElem.value) ? criElem.value : '-';
 
