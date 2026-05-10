@@ -271,6 +271,10 @@
                     <div class="plan-block-body"><table class="med-table"><tbody id="tbody-analgesia"></tbody></table></div>
                 </div>
                 <div class="plan-block">
+                    <div class="plan-block-header"><span>Antibiotic & Other (抗生素與其他)</span><div><select class="drug-selector" onchange="addDrugToSection('tbody-other', this)"></select><button class="btn-toggle-block" onclick="toggleBlock(this)">－</button></div></div>
+                    <div class="plan-block-body"><table class="med-table"><tbody id="tbody-other"></tbody></table></div>
+                </div>
+                <div class="plan-block">
                     <div class="plan-block-header" style="background-color: #2c5282;"><span>CRI (恆速輸液計算)</span><div><select class="drug-selector cri-selector" onchange="addCRIToSection(this)"></select><button class="btn-toggle-block" onclick="toggleBlock(this)">－</button></div></div>
                     <div class="plan-block-body">
                         <table class="med-table">
@@ -295,9 +299,9 @@
         
         <div class="pagination-panel">
             <div style="display: flex; align-items: center; margin-right: 15px; color: #4a5568;">紀錄分頁：</div>
-            <button id="btn-page-1" class="page-btn active" onclick="switchPage(1)">第 1 頁 (0-150分)</button>
-            <button id="btn-page-2" class="page-btn" onclick="switchPage(2)">第 2 頁 (150-300分)</button>
-            <button id="btn-page-3" class="page-btn" onclick="switchPage(3)">第 3 頁 (300-450分)</button>
+            <button id="btn-page-1" class="page-btn active" onclick="switchPage(1)">第一頁</button>
+            <button id="btn-page-2" class="page-btn" onclick="switchPage(2)">第二頁</button>
+            <button id="btn-page-3" class="page-btn" onclick="switchPage(3)">第三頁</button>
         </div>
         
         <div id="grids-wrapper" style="width: 100%;"></div>
@@ -346,11 +350,12 @@ const regularOptionsHTML = `
 `;
 const criOptionsHTML = `<option value="">+ 選擇 CRI...</option><option value="Fentanyl CRI">Fentanyl CRI</option><option value="Dopamine CRI">Dopamine CRI</option><option value="Dobutamine CRI">Dobutamine CRI</option><option value="Norepinephrine CRI">Norepinephrine CRI</option><option value="MLK (Morphine)">MLK (Morphine)</option><option value="CUSTOM">+ 自訂 CRI</option>`;
 
-// ================= 多頁面架構生成邏輯 (重點升級區) =================
+// ================= 多頁面架構與時間追蹤系統 =================
 const TOTAL_PAGES = 3;
 const SLOTS_PER_PAGE = 30;
 let currentGlobalSlot = 0; 
 let charts = [];
+let timeInputEdited = false; // 追蹤使用者是否有手動修改時間
 
 const topRowDefs = [
     { id: 'row-time', name: 'Time', bg: '#e2e8f0' },
@@ -361,7 +366,6 @@ const topRowDefs = [
     { id: 'row-peak', name: 'Peak' },
     { id: 'row-tv', name: 'TV' },
     { id: 'row-rr', name: 'RR' },
-    /* 💡 您要求的 4 個血壓心跳欄位，樣式已完全統一 */
     { id: 'row-pulse', name: 'Pulse' },
     { id: 'row-sysbp', name: 'Sys BP' },
     { id: 'row-diabp', name: 'Dia BP' },
@@ -374,20 +378,16 @@ const bottomRowDefs = [
     { id: 'row-cri', name: 'CRI', height: '25px', cellStyle: 'white-space: normal; word-break: break-all; line-height: 1.1; padding: 2px;' }
 ];
 
-// 動態建立 3 個分頁的 DOM 結構
+// 動態建立分頁 DOM 結構
 function buildMultiPageGrids() {
     const wrapper = document.getElementById('grids-wrapper');
     let gridHTML = '';
 
     for (let p = 1; p <= TOTAL_PAGES; p++) {
         gridHTML += `<div class="page-view page-${p} ${p === 1 ? 'active' : ''}">`;
-        
-        // 列印專用標頭：只有在 PDF 列印時且是第 2, 3 頁才會出現
         if (p > 1) {
             gridHTML += `<div class="print-only-header">Evergreen Anesthesia Record - Page ${p} &nbsp;&nbsp;|&nbsp;&nbsp; Animal ID: <span class="print-id-sync"></span></div>`;
         }
-
-        // Top Table
         gridHTML += `<table class="record-table">`;
         topRowDefs.forEach(r => {
             gridHTML += `<tr><td class="row-header" style="${r.bg ? 'background-color:'+r.bg+';' : ''}">${r.name}</td>`;
@@ -396,13 +396,7 @@ function buildMultiPageGrids() {
             }
             gridHTML += `</tr>`;
         });
-        gridHTML += `</table>`;
-
-        // Chart Area
-        gridHTML += `<div class="chart-wrapper"><canvas id="anesthesiaChart-${p}"></canvas></div>`;
-
-        // Bottom Table
-        gridHTML += `<table class="record-table">`;
+        gridHTML += `</table><div class="chart-wrapper"><canvas id="anesthesiaChart-${p}"></canvas></div><table class="record-table">`;
         bottomRowDefs.forEach(r => {
             gridHTML += `<tr style="${r.height ? 'height:'+r.height+';' : ''}"><td class="row-header">${r.name}</td>`;
             for(let i = 0; i < SLOTS_PER_PAGE; i++) {
@@ -410,14 +404,12 @@ function buildMultiPageGrids() {
             }
             gridHTML += `</tr>`;
         });
-        gridHTML += `</table>`;
-
-        gridHTML += `</div>`;
+        gridHTML += `</table></div>`;
     }
     wrapper.innerHTML = gridHTML;
 }
 
-// 建立 3 個獨立的 Chart 實例
+// 建立獨立的 Chart 實例
 function initCharts() {
     for (let p = 1; p <= TOTAL_PAGES; p++) {
         const ctx = document.getElementById(`anesthesiaChart-${p}`).getContext('2d');
@@ -440,7 +432,7 @@ function initCharts() {
                     x: { grid: { display: true, drawOnChartArea: true, color: '#e2e8f0' }, ticks: { display: false } },
                     y: { min: 0, max: 300, ticks: { stepSize: 20 }, grid: { color: '#e2e8f0' }, afterFit: function(scale) { scale.width = 75; } }
                 },
-                animation: false // 停用動畫確保跨分頁切換時效能流暢
+                animation: false
             }
         });
         charts.push(chart);
@@ -451,31 +443,41 @@ window.onload = function() {
     document.querySelectorAll('.drug-selector:not(.cri-selector)').forEach(sel => sel.innerHTML = regularOptionsHTML);
     document.querySelectorAll('.cri-selector').forEach(sel => sel.innerHTML = criOptionsHTML);
     
-    // 初始化網格與圖表
     buildMultiPageGrids();
     initCharts();
 
-    const now = new Date();
-    document.getElementById('record-time').value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    // 💡 時間追蹤系統初始化
+    const timeInput = document.getElementById('record-time');
+    const updateToNow = () => {
+        const now = new Date();
+        timeInput.value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    };
+    updateToNow();
+
+    // 監聽使用者是否手動修改時間
+    timeInput.addEventListener('input', () => {
+        timeInputEdited = true;
+    });
+
+    // 每 30 秒自動檢查一次，若無手動修改，則保持當下最新時間
+    setInterval(() => {
+        if (!timeInputEdited) {
+            updateToNow();
+        }
+    }, 30000);
 };
 
 // ================= 分頁切換與同步邏輯 =================
 function switchPage(p) {
-    // 切換按鈕與頁面外觀
     document.querySelectorAll('.page-btn').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
     
     document.getElementById(`btn-page-${p}`).classList.add('active');
     document.querySelector(`.page-view.page-${p}`).classList.add('active');
     
-    // 強制重新繪製該頁的圖表，避免尺寸跑掉
-    if (charts[p-1]) {
-        charts[p-1].resize();
-        charts[p-1].update();
-    }
+    if (charts[p-1]) { charts[p-1].resize(); charts[p-1].update(); }
 }
 
-// 同步 Animal ID 到每頁的列印標頭
 function syncPatientId(val) {
     document.querySelectorAll('.print-id-sync').forEach(el => el.textContent = val);
 }
@@ -487,12 +489,10 @@ function addRecord() {
     const timeStr = document.getElementById('record-time').value;
     if(!timeStr) { alert('請輸入紀錄時間！'); return; }
 
-    // 計算這筆紀錄屬於哪一頁，並自動跳轉過去！
     let targetPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
     let localSlot = currentGlobalSlot % SLOTS_PER_PAGE;
     switchPage(targetPage);
 
-    // 填入頂部文字
     document.getElementById(`row-time-${currentGlobalSlot}`).textContent = timeStr;
     document.getElementById(`row-anes-${currentGlobalSlot}`).textContent = document.getElementById('anes').value || '-';
     document.getElementById(`row-o2-${currentGlobalSlot}`).textContent = document.getElementById('o2').value || '-';
@@ -502,19 +502,16 @@ function addRecord() {
     document.getElementById(`row-tv-${currentGlobalSlot}`).textContent = document.getElementById('tv').value || '-';
     document.getElementById(`row-rr-${currentGlobalSlot}`).textContent = document.getElementById('rr').value || '-';
 
-    // 抓取生理數值
     const pulse = document.getElementById('pulse').value ? Number(document.getElementById('pulse').value) : null;
     const sys = document.getElementById('sysBP').value ? Number(document.getElementById('sysBP').value) : null;
     const dia = document.getElementById('diaBP').value ? Number(document.getElementById('diaBP').value) : null;
     const mean = document.getElementById('meanBP').value ? Number(document.getElementById('meanBP').value) : null;
 
-    // 填入表格文字 (血壓心跳)
     document.getElementById(`row-pulse-${currentGlobalSlot}`).textContent = pulse !== null ? pulse : '-';
     document.getElementById(`row-sysbp-${currentGlobalSlot}`).textContent = sys !== null ? sys : '-';
     document.getElementById(`row-diabp-${currentGlobalSlot}`).textContent = dia !== null ? dia : '-';
     document.getElementById(`row-meanbp-${currentGlobalSlot}`).textContent = mean !== null ? mean : '-';
 
-    // 更新對應分頁的 Chart
     let currentChart = charts[targetPage - 1];
     currentChart.data.datasets[0].data[localSlot] = pulse;
     currentChart.data.datasets[1].data[localSlot] = sys;
@@ -522,7 +519,6 @@ function addRecord() {
     currentChart.data.datasets[3].data[localSlot] = mean;
     currentChart.update();
 
-    // 填入底部文字
     const fluidType = document.getElementById('fluid-type').value;
     const fluidAmt = document.getElementById('fluids').value;
     document.getElementById(`row-fluids-${currentGlobalSlot}`).textContent = fluidAmt !== '' ? `${fluidType} ${fluidAmt}` : '-';
@@ -532,12 +528,10 @@ function addRecord() {
 
     currentGlobalSlot++;
 
-    // 自動時間加 5 分鐘
-    if (timeStr) {
-        const [h, m] = timeStr.split(':').map(Number);
-        const nextDate = new Date(); nextDate.setHours(h); nextDate.setMinutes(m + 5);
-        document.getElementById('record-time').value = String(nextDate.getHours()).padStart(2, '0') + ':' + String(nextDate.getMinutes()).padStart(2, '0');
-    }
+    // 💡 紀錄完成後，取消使用者的「手動編輯」狀態，並將時間恢復為真實的當下時間
+    timeInputEdited = false;
+    const realNow = new Date();
+    document.getElementById('record-time').value = String(realNow.getHours()).padStart(2, '0') + ':' + String(realNow.getMinutes()).padStart(2, '0');
 }
 
 // ================= 藥物計算工具 =================
@@ -592,7 +586,6 @@ function forceExpandAll() { document.getElementById('plan-blocks-wrapper').style
 
 function exportPDFNative() {
     forceExpandAll(); 
-    // 讓圖表有時間適應列印展開的版面
     setTimeout(() => { window.print(); }, 300); 
 }
 
