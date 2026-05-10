@@ -17,7 +17,7 @@
         .input-group label { font-size: 11px; font-weight: bold; color: #4a5568; margin-bottom: 4px; white-space: nowrap; }
         .input-group input, .input-group select { padding: 6px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px; text-align: center; }
         
-        /* 💡 確保時間欄位不被 cut 掉 */
+        /* 確保時間欄位不被 cut 掉 */
         .time-group { width: 130px !important; }
         .time-group input { background-color: #fffaf0; border: 1px solid #f6ad55; font-weight: bold; font-size: 14px; }
         
@@ -412,10 +412,10 @@
                 <tr id="row-peak"><td class="row-header">Peak</td></tr>
                 <tr id="row-tv"><td class="row-header">TV</td></tr>
                 <tr id="row-rr"><td class="row-header">RR</td></tr>
-                <tr id="row-pulse"><td class="row-header" style="color: #c53030;">Pulse</td></tr>
-                <tr id="row-sysbp"><td class="row-header" style="color: #2b6cb0;">Sys BP</td></tr>
-                <tr id="row-diabp"><td class="row-header" style="color: #2b6cb0;">Dia BP</td></tr>
-                <tr id="row-meanbp"><td class="row-header" style="color: #2c7a7b;">Mean BP</td></tr>
+                <tr id="row-pulse"><td class="row-header">Pulse</td></tr>
+                <tr id="row-sysbp"><td class="row-header">Sys BP</td></tr>
+                <tr id="row-diabp"><td class="row-header">Dia BP</td></tr>
+                <tr id="row-meanbp"><td class="row-header">Mean BP</td></tr>
             </table>
             
             <div class="chart-wrapper">
@@ -526,7 +526,6 @@ window.onload = function() {
     document.querySelectorAll('.drug-selector:not(.cri-selector)').forEach(sel => sel.innerHTML = regularOptionsHTML);
     document.querySelectorAll('.cri-selector').forEach(sel => sel.innerHTML = criOptionsHTML);
     
-    // 💡 預設開啟時為現在時間
     const now = new Date();
     const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('record-time').value = timeStr;
@@ -680,12 +679,11 @@ function forceExpandAll() {
     document.querySelector('.btn-toggle-all').textContent = '－ 收合麻醉計劃';
 }
 
-// ================= 下方圖表與動態紀錄邏輯 (滿版對齊) =================
+// ================= 下方圖表與動態紀錄邏輯 =================
 const MAX_SLOTS = 30; 
 let currentSlotIndex = 0; 
 
 function initTables() {
-    /* 💡 在初始化陣列中加入血壓與心跳的四個新欄位 ID */
     const topRows = ['row-time', 'row-anes', 'row-o2', 'row-spo2', 'row-etco2', 'row-peak', 'row-tv', 'row-rr', 'row-pulse', 'row-sysbp', 'row-diabp', 'row-meanbp'];
     const bottomRows = ['row-fluids', 'row-temp'];
     
@@ -727,7 +725,6 @@ const anesthesiaChart = new Chart(ctx, {
         plugins: { legend: { display: false } }, 
         scales: {
             x: { offset: true, grid: { display: true, drawOnChartArea: true, color: '#e2e8f0' }, ticks: { display: false } },
-            /* 💡 圖表 Y 軸上限為 300，間隔改為 20 */
             y: { min: 0, max: 300, ticks: { stepSize: 20 }, grid: { color: '#e2e8f0' }, afterFit: function(scale) { scale.width = 75; } }
         }
     }
@@ -736,7 +733,6 @@ const anesthesiaChart = new Chart(ctx, {
 function addRecord() {
     if (currentSlotIndex >= MAX_SLOTS) { alert('表單已滿 30 格！'); return; }
 
-    /* 💡 回溯補填功能：抓取輸入框的時間，而非電腦現在時間 */
     const timeStr = document.getElementById('record-time').value;
     if(!timeStr) { alert('請輸入紀錄時間！'); return; }
 
@@ -763,7 +759,6 @@ function addRecord() {
     const dia = document.getElementById('diaBP').value ? Number(document.getElementById('diaBP').value) : null;
     const mean = document.getElementById('meanBP').value ? Number(document.getElementById('meanBP').value) : null;
 
-    /* 💡 將數值同時填入表格的對應儲存格中 */
     document.getElementById(`row-pulse-${currentSlotIndex}`).textContent = pulse !== null ? pulse : '-';
     document.getElementById(`row-sysbp-${currentSlotIndex}`).textContent = sys !== null ? sys : '-';
     document.getElementById(`row-diabp-${currentSlotIndex}`).textContent = dia !== null ? dia : '-';
@@ -777,7 +772,6 @@ function addRecord() {
     anesthesiaChart.update();
     currentSlotIndex++;
 
-    /* 💡 自動遞增：每按一次「填入」，時間自動加 5 分鐘 */
     if (timeStr) {
         const [h, m] = timeStr.split(':').map(Number);
         const nextDate = new Date();
