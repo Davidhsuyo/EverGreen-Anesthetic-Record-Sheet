@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evergreen 獸醫麻醉紀錄表 (8頁全數據圖表版)</title>
+    <title>Evergreen 獸醫麻醉紀錄表 (8頁自適應圖表版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* 讓最外層容器可以盡量利用螢幕寬度 */
@@ -36,7 +36,7 @@
         .page-view { display: none; }
         .page-view.active { display: block; }
 
-        /* 圖表折線控制面板 (加入 flex-wrap 以免按鈕太多跑版) */
+        /* 圖表折線控制面板 */
         .chart-controls-panel { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; }
         .line-toggle-btn { padding: 4px 15px; border: 2px solid #718096; background: white; color: #4a5568; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s; }
         .line-toggle-btn.active { background: #4a5568; color: white; border-color: #4a5568; }
@@ -432,16 +432,15 @@
         </div>
 
         <div class="chart-controls-panel">
-            <span style="font-size: 13px; font-weight: bold; color: #4a5568;">圖表折線控制：</span>
-            <button class="line-toggle-btn" onclick="toggleLine(0, this)">Pulse (心率)</button>
+            <span style="font-size: 13px; font-weight: bold; color: #4a5568;">圖表折線顯示：</span>
+            <button class="line-toggle-btn" onclick="toggleLine(0, this)">Pulse</button>
             <button class="line-toggle-btn" onclick="toggleLine(1, this)">Sys BP</button>
             <button class="line-toggle-btn" onclick="toggleLine(2, this)">Dia BP</button>
             <button class="line-toggle-btn" onclick="toggleLine(3, this)">Mean BP</button>
-            
-            <button class="line-toggle-btn" onclick="toggleLine(4, this)">SpO2 (血氧)</button>
-            <button class="line-toggle-btn" onclick="toggleLine(5, this)">ETCO2 (吐氣末)</button>
-            <button class="line-toggle-btn" onclick="toggleLine(6, this)">RR (呼吸)</button>
-            <button class="line-toggle-btn" onclick="toggleLine(7, this)">Temp (體溫)</button>
+            <button class="line-toggle-btn" onclick="toggleLine(4, this)">SpO2</button>
+            <button class="line-toggle-btn" onclick="toggleLine(5, this)">ETCO2</button>
+            <button class="line-toggle-btn" onclick="toggleLine(6, this)">RR</button>
+            <button class="line-toggle-btn" onclick="toggleLine(7, this)">Temp</button>
         </div>
         
         <div id="grids-wrapper" style="width: 100%;"></div>
@@ -539,6 +538,19 @@ const criOptionsHTML = `
     <option value="CUSTOM">+ 自訂 CRI (Custom)</option>
 `;
 
+// ================= Y 軸自適應轉換公式 =================
+// 0~50: 1單位佔0.2格 (5=1格)
+// 50~100: 1單位佔0.1格 (10=1格)
+// 100~300: 1單位佔0.05格 (20=1格)
+function mapY(val) {
+    if (val === null || val === undefined || val === '') return null;
+    let v = Number(val);
+    if (isNaN(v)) return null;
+    if (v <= 50) return v / 5;
+    if (v <= 100) return 10 + (v - 50) / 10;
+    return 15 + (v - 100) / 20;
+}
+
 // ================= 多頁面架構與時間追蹤系統 =================
 const TOTAL_PAGES = 8;
 const SLOTS_PER_PAGE = 30;
@@ -597,7 +609,7 @@ function buildMultiPageGrids() {
     wrapper.innerHTML = gridHTML;
 }
 
-// 建立 8 個獨立的 Chart 實例 (包含新增的 SpO2, ETCO2, RR, Temp)
+// 建立 8 個獨立的 Chart 實例 (套用非線性Y軸邏輯)
 function initCharts() {
     for (let p = 1; p <= TOTAL_PAGES; p++) {
         const ctx = document.getElementById(`anesthesiaChart-${p}`).getContext('2d');
@@ -608,24 +620,56 @@ function initCharts() {
             data: {
                 labels: Array(SLOTS_PER_PAGE).fill(''),
                 datasets: [
-                    // 原本的 4 個
                     { label: 'Pulse', data: emptyData(), borderColor: 'rgba(255, 99, 132, 1)', backgroundColor: 'rgba(255, 99, 132, 1)', pointStyle: 'circle', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'Sys BP', data: emptyData(), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 1)', pointStyle: 'triangle', pointRadius: 5, rotation: 180, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'Dia BP', data: emptyData(), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 1)', pointStyle: 'triangle', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'Mean BP', data: emptyData(), borderColor: 'rgba(75, 192, 192, 1)', backgroundColor: 'rgba(75, 192, 192, 1)', pointStyle: 'crossRot', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     
-                    // 💡 新增的 4 個 (給予特殊顏色與符號)
                     { label: 'SpO2', data: emptyData(), borderColor: '#805ad5', backgroundColor: '#805ad5', pointStyle: 'rect', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'ETCO2', data: emptyData(), borderColor: '#38a169', backgroundColor: '#38a169', pointStyle: 'rectRot', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
-                    { label: 'RR', data: emptyData(), borderColor: '#dd6b20', backgroundColor: '#dd6b20', pointStyle: 'star', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'RR', data: emptyData(), borderColor: 'red', backgroundColor: 'red', pointStyle: 'star', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
                     { label: 'Temp', data: emptyData(), borderColor: '#d53f8c', backgroundColor: '#d53f8c', pointStyle: 'cross', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 }
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false, layout: { padding: 0 }, plugins: { legend: { display: false } }, 
+                responsive: true, maintainAspectRatio: false, layout: { padding: 0 }, 
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            // Tooltip 反向運算，顯示使用者輸入的原始真實數值
+                            label: function(context) {
+                                let val = context.raw;
+                                if (val === null) return '';
+                                let realVal = 0;
+                                if (val <= 10) realVal = val * 5;
+                                else if (val <= 15) realVal = 50 + (val - 10) * 10;
+                                else realVal = 100 + (val - 15) * 20;
+                                realVal = Math.round(realVal * 100) / 100;
+                                return context.dataset.label + ': ' + realVal;
+                            }
+                        }
+                    }
+                }, 
                 scales: {
                     x: { grid: { display: true, drawOnChartArea: true, color: '#e2e8f0' }, ticks: { display: false } },
-                    y: { min: 0, max: 300, ticks: { stepSize: 20 }, grid: { color: '#e2e8f0' }, afterFit: function(scale) { scale.width = 75; } }
+                    // 完美的等距自適應 Y 軸
+                    y: { 
+                        min: 0, 
+                        max: 25, 
+                        ticks: { 
+                            stepSize: 1,
+                            callback: function(value) {
+                                if (value <= 10) return value * 5;
+                                if (value <= 15) return 50 + (value - 10) * 10;
+                                if (value <= 25) return 100 + (value - 15) * 20;
+                                return '';
+                            },
+                            font: { size: 10 }
+                        },
+                        grid: { color: '#e2e8f0' }, 
+                        afterFit: function(scale) { scale.width = 75; } 
+                    }
                 },
                 animation: false
             }
@@ -634,7 +678,7 @@ function initCharts() {
     }
 }
 
-// 💡 擴展：圖表折線獨立開關邏輯 (總共 8 個開關)
+// 圖表折線獨立開關邏輯 (總共 8 個開關)
 let lineVisibility = [false, false, false, false, false, false, false, false];
 function toggleLine(dsIndex, btn) {
     lineVisibility[dsIndex] = !lineVisibility[dsIndex];
@@ -657,7 +701,6 @@ window.onload = function() {
     buildMultiPageGrids();
     initCharts();
 
-    // 智慧時間追蹤
     const timeInput = document.getElementById('record-time');
     const updateToNow = () => {
         const now = new Date();
@@ -672,14 +715,11 @@ window.onload = function() {
     }, 30000);
 };
 
-// ================= 分頁切換與同步邏輯 =================
 function switchPage(p) {
     document.querySelectorAll('.page-btn').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
-    
     document.getElementById(`btn-page-${p}`).classList.add('active');
     document.querySelector(`.page-view.page-${p}`).classList.add('active');
-    
     if (charts[p-1]) { charts[p-1].resize(); charts[p-1].update(); }
 }
 
@@ -687,7 +727,6 @@ function syncPatientId(val) {
     document.querySelectorAll('.print-id-sync').forEach(el => el.textContent = val);
 }
 
-// ================= 新增紀錄邏輯 =================
 function addRecord() {
     if (currentGlobalSlot >= TOTAL_PAGES * SLOTS_PER_PAGE) { alert('表單已完全滿載 (240格)！'); return; }
 
@@ -708,7 +747,6 @@ function addRecord() {
     const rrVal = document.getElementById('rr').value || '-';
     const tempVal = document.getElementById('temp').value || '-';
 
-    // 填入表格上半段文字
     document.getElementById(`row-time-${currentGlobalSlot}`).textContent = timeStr;
     document.getElementById(`row-anes-${currentGlobalSlot}`).textContent = anesVal;
     document.getElementById(`row-o2-${currentGlobalSlot}`).textContent = o2Val;
@@ -718,37 +756,33 @@ function addRecord() {
     document.getElementById(`row-tv-${currentGlobalSlot}`).textContent = tvVal;
     document.getElementById(`row-rr-${currentGlobalSlot}`).textContent = rrVal;
 
-    // 抓取血壓心跳數值
     const pulseNum = document.getElementById('pulse').value ? Number(document.getElementById('pulse').value) : null;
     const sysNum = document.getElementById('sysBP').value ? Number(document.getElementById('sysBP').value) : null;
     const diaNum = document.getElementById('diaBP').value ? Number(document.getElementById('diaBP').value) : null;
     const meanNum = document.getElementById('meanBP').value ? Number(document.getElementById('meanBP').value) : null;
 
-    // 💡 抓取新增的四大數值作為數字 (以利繪製圖表)
     const spo2Num = document.getElementById('spo2').value ? Number(document.getElementById('spo2').value) : null;
     const etco2Num = document.getElementById('etco2').value ? Number(document.getElementById('etco2').value) : null;
     const rrNum = document.getElementById('rr').value ? Number(document.getElementById('rr').value) : null;
     const tempNum = document.getElementById('temp').value ? Number(document.getElementById('temp').value) : null;
 
-    // 填入表格下半段文字 (血壓心跳)
     document.getElementById(`row-pulse-${currentGlobalSlot}`).textContent = pulseNum !== null ? pulseNum : '-';
     document.getElementById(`row-sysbp-${currentGlobalSlot}`).textContent = sysNum !== null ? sysNum : '-';
     document.getElementById(`row-diabp-${currentGlobalSlot}`).textContent = diaNum !== null ? diaNum : '-';
     document.getElementById(`row-meanbp-${currentGlobalSlot}`).textContent = meanNum !== null ? meanNum : '-';
 
-    // 💡 填入 Chart.js 圖表資料點 (包含新增的 4 個)
+    // 套用 mapY 將真實數字轉換成圖表 Y 軸座標位置
     let currentChart = charts[targetPage - 1];
-    currentChart.data.datasets[0].data[localSlot] = pulseNum;
-    currentChart.data.datasets[1].data[localSlot] = sysNum;
-    currentChart.data.datasets[2].data[localSlot] = diaNum;
-    currentChart.data.datasets[3].data[localSlot] = meanNum;
-    currentChart.data.datasets[4].data[localSlot] = spo2Num;
-    currentChart.data.datasets[5].data[localSlot] = etco2Num;
-    currentChart.data.datasets[6].data[localSlot] = rrNum;
-    currentChart.data.datasets[7].data[localSlot] = tempNum;
+    currentChart.data.datasets[0].data[localSlot] = mapY(pulseNum);
+    currentChart.data.datasets[1].data[localSlot] = mapY(sysNum);
+    currentChart.data.datasets[2].data[localSlot] = mapY(diaNum);
+    currentChart.data.datasets[3].data[localSlot] = mapY(meanNum);
+    currentChart.data.datasets[4].data[localSlot] = mapY(spo2Num);
+    currentChart.data.datasets[5].data[localSlot] = mapY(etco2Num);
+    currentChart.data.datasets[6].data[localSlot] = mapY(rrNum);
+    currentChart.data.datasets[7].data[localSlot] = mapY(tempNum);
     currentChart.update();
 
-    // 填入底部文字
     const fluidType = document.getElementById('fluid-type').value;
     const fluidAmt = document.getElementById('fluids').value;
     document.getElementById(`row-fluids-${currentGlobalSlot}`).textContent = fluidAmt !== '' ? `${fluidType} ${fluidAmt}` : '-';
@@ -758,13 +792,12 @@ function addRecord() {
 
     currentGlobalSlot++;
 
-    // 紀錄完成後，取消使用者的「手動編輯鎖定」狀態，並將時間恢復為真實的當下時間
     timeInputEdited = false;
     const realNow = new Date();
     document.getElementById('record-time').value = String(realNow.getHours()).padStart(2, '0') + ':' + String(realNow.getMinutes()).padStart(2, '0');
 }
 
-// ================= 藥物計算工具 (無壓縮版本) =================
+// ================= 藥物計算工具 =================
 function addDrugToSection(tbodyId, selectElem) {
     const drug = selectElem.value;
     if (!drug) return;
@@ -889,7 +922,7 @@ function updateGlobalCalculations() {
     document.querySelectorAll('.c-conc').forEach(el => calcCRI(el));
 }
 
-// ================= 收合與匯出邏輯 (無壓縮版本) =================
+// ================= 收合與匯出邏輯 =================
 function toggleBlock(btn) {
     const body = btn.closest('.plan-block').querySelector('.plan-block-body');
     if (body.style.display === 'none') { body.style.display = 'block'; btn.textContent = '－'; } 
@@ -931,10 +964,6 @@ function exportCSV() {
     csvContent += headers.join(",") + "\n";
 
     for(let i = 0; i < currentGlobalSlot; i++) {
-        let pIdx = Math.floor(i / SLOTS_PER_PAGE);
-        let lIdx = i % SLOTS_PER_PAGE;
-        let cData = charts[pIdx].data.datasets;
-        
         let row = [
             document.getElementById(`row-time-${i}`).textContent,
             document.getElementById(`row-anes-${i}`).textContent,
@@ -944,10 +973,10 @@ function exportCSV() {
             document.getElementById(`row-peak-${i}`).textContent,
             document.getElementById(`row-tv-${i}`).textContent,
             document.getElementById(`row-rr-${i}`).textContent,
-            cData[0].data[lIdx] !== null ? cData[0].data[lIdx] : "-",
-            cData[1].data[lIdx] !== null ? cData[1].data[lIdx] : "-",
-            cData[2].data[lIdx] !== null ? cData[2].data[lIdx] : "-",
-            cData[3].data[lIdx] !== null ? cData[3].data[lIdx] : "-",
+            document.getElementById(`row-pulse-${i}`).textContent,
+            document.getElementById(`row-sysbp-${i}`).textContent,
+            document.getElementById(`row-diabp-${i}`).textContent,
+            document.getElementById(`row-meanbp-${i}`).textContent,
             document.getElementById(`row-fluids-${i}`).textContent,
             document.getElementById(`row-temp-${i}`).textContent,
             document.getElementById(`row-cri-${i}`).textContent
