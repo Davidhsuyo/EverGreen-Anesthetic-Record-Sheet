@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evergreen 獸醫麻醉紀錄表 (8頁自適應圖表版)</title>
+    <title>Evergreen 獸醫麻醉紀錄表</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* 讓最外層容器可以盡量利用螢幕寬度 */
@@ -35,6 +35,7 @@
         .page-btn.active { background: #2b6cb0; color: white; }
         .page-view { display: none; }
         .page-view.active { display: block; }
+        .page-view.page-hidden { display: none !important; }
 
         /* 圖表折線控制面板 */
         .chart-controls-panel { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; }
@@ -130,6 +131,7 @@
             .plan-container { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
             .horizontal-times-bar { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
             .page-view { display: block !important; border: 2px solid #000; margin-bottom: 15px; padding-bottom: 2px; break-inside: avoid; }
+            .page-view.page-hidden { display: none !important; }
             
             .page-view.page-2, .page-view.page-3, .page-view.page-4, .page-view.page-5, 
             .page-view.page-6, .page-view.page-7, .page-view.page-8 { page-break-before: always; }
@@ -453,13 +455,14 @@
         <div class="pagination-panel">
             <div style="display: flex; align-items: center; margin-right: 15px; color: #4a5568;">紀錄分頁：</div>
             <button id="btn-page-1" class="page-btn active" onclick="switchPage(1)">第一頁</button>
-            <button id="btn-page-2" class="page-btn" onclick="switchPage(2)">第二頁</button>
-            <button id="btn-page-3" class="page-btn" onclick="switchPage(3)">第三頁</button>
-            <button id="btn-page-4" class="page-btn" onclick="switchPage(4)">第四頁</button>
-            <button id="btn-page-5" class="page-btn" onclick="switchPage(5)">第五頁</button>
-            <button id="btn-page-6" class="page-btn" onclick="switchPage(6)">第六頁</button>
-            <button id="btn-page-7" class="page-btn" onclick="switchPage(7)">第七頁</button>
-            <button id="btn-page-8" class="page-btn" onclick="switchPage(8)">第八頁</button>
+            <button id="btn-page-2" class="page-btn" style="display: none;" onclick="switchPage(2)">第二頁</button>
+            <button id="btn-page-3" class="page-btn" style="display: none;" onclick="switchPage(3)">第三頁</button>
+            <button id="btn-page-4" class="page-btn" style="display: none;" onclick="switchPage(4)">第四頁</button>
+            <button id="btn-page-5" class="page-btn" style="display: none;" onclick="switchPage(5)">第五頁</button>
+            <button id="btn-page-6" class="page-btn" style="display: none;" onclick="switchPage(6)">第六頁</button>
+            <button id="btn-page-7" class="page-btn" style="display: none;" onclick="switchPage(7)">第七頁</button>
+            <button id="btn-page-8" class="page-btn" style="display: none;" onclick="switchPage(8)">第八頁</button>
+            <button id="btn-add-next-page" class="page-btn" style="margin-left: auto; background-color: #38a169; color: white; border-color: #276749;" onclick="addNewPage()">＋ 新增下一頁</button>
         </div>
 
         <div class="chart-controls-panel">
@@ -590,6 +593,7 @@ const SLOTS_PER_PAGE = 30;
 let currentGlobalSlot = 0; 
 let charts = [];
 let timeInputEdited = false;
+let maxVisiblePage = 1; // 💡 新增：追蹤目前已經開啟的最大頁數
 
 const topRowDefs = [
     { id: 'row-time', name: 'Time', bg: '#e2e8f0' },
@@ -619,7 +623,8 @@ function buildMultiPageGrids() {
     let gridHTML = '';
 
     for (let p = 1; p <= TOTAL_PAGES; p++) {
-        gridHTML += `<div class="page-view page-${p} ${p === 1 ? 'active' : ''}">`;
+        // 💡 修改：加入 page-hidden 類別將大於第 1 頁的區塊暫時隱藏
+        gridHTML += `<div class="page-view page-${p} ${p === 1 ? 'active' : ''} ${p > 1 ? 'page-hidden' : ''}">`;
         if (p > 1) {
             gridHTML += `<div class="print-only-header">Evergreen Anesthesia Record - Page ${p} &nbsp;&nbsp;|&nbsp;&nbsp; Animal ID: <span class="print-id-sync"></span></div>`;
         }
@@ -668,7 +673,8 @@ function initCharts() {
                         label: 'Bolus', 
                         data: emptyData(), 
                         pointRadius: 0, 
-                        showLine: false
+                        showLine: false,
+                        pointStyle: syringeIcon
                     }
                 ]
             },
@@ -698,7 +704,18 @@ function initCharts() {
             options: {
                 responsive: true, maintainAspectRatio: false, layout: { padding: { top: 15 } }, 
                 plugins: { 
-                    legend: { display: false },
+                    legend: { 
+                        display: true,
+                        position: 'bottom',
+                        onClick: function(e, legendItem, legend) {}, // 禁用點擊隱藏，以免跟上方按鈕衝突
+                        labels: {
+                            usePointStyle: true,
+                            boxWidth: 8,
+                            padding: 12,
+                            font: { size: 11, weight: 'bold' },
+                            color: '#4a5568'
+                        }
+                    },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
@@ -769,6 +786,31 @@ window.onload = function() {
     setInterval(() => { if (!timeInputEdited) { updateToNow(); } }, 30000);
 };
 
+// 💡 新增：手動增加下一頁的功能邏輯
+function addNewPage(autoSwitch = true) {
+    if (maxVisiblePage >= TOTAL_PAGES) {
+        if (autoSwitch) alert('已達到最大頁數限制 (8頁)！');
+        return;
+    }
+    maxVisiblePage++;
+    
+    // 顯示按鈕
+    document.getElementById(`btn-page-${maxVisiblePage}`).style.display = 'inline-block';
+    
+    // 移除隱藏標籤，讓它可以在列印時出現
+    document.querySelector(`.page-view.page-${maxVisiblePage}`).classList.remove('page-hidden');
+    
+    // 若達到極限，隱藏新增按鈕
+    if (maxVisiblePage >= TOTAL_PAGES) {
+        document.getElementById('btn-add-next-page').style.display = 'none';
+    }
+    
+    // 自動切換到該頁
+    if (autoSwitch) {
+        switchPage(maxVisiblePage);
+    }
+}
+
 function switchPage(p) {
     document.querySelectorAll('.page-btn').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
@@ -800,6 +842,12 @@ function addRecord() {
     if(!timeStr) { alert('請輸入紀錄時間！'); return; }
 
     let targetPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
+    
+    // 💡 修改：若需要記錄的頁數大於目前解鎖的最大頁數，自動進行解鎖與新增
+    while (targetPage > maxVisiblePage && maxVisiblePage < TOTAL_PAGES) {
+        addNewPage(false);
+    }
+    
     let localSlot = currentGlobalSlot % SLOTS_PER_PAGE;
     switchPage(targetPage);
 
