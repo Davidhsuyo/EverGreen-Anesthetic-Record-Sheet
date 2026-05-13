@@ -12,20 +12,25 @@
         * { box-sizing: border-box; }
         
         /* --- 頂部輸入面板 --- */
-        .input-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; justify-content: flex-start; }
+        .input-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: stretch; justify-content: flex-start; }
         .input-group { display: flex; flex-direction: column; width: 75px; } 
         .input-group label { font-size: 11px; font-weight: bold; color: #4a5568; margin-bottom: 4px; white-space: nowrap; }
         .input-group input, .input-group select { padding: 6px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px; text-align: center; }
         
+        /* 紀錄時間外觀 */
         .time-group { width: 130px !important; }
-        .time-group input { background-color: #fffaf0; border: 1px solid #f6ad55; font-weight: bold; font-size: 14px; }
+        .time-group input { background-color: #fffaf0; border: 1px solid #f6ad55; font-weight: bold; font-size: 14px; width: 100%; }
+        
+        /* 插拔管時間外觀 (保留不同於主紀錄時間的獨立樣式) */
+        .text-time-group { width: 130px !important; }
+        .text-time-group input { background-color: #edf2f7; border: 1px solid #a0aec0; font-weight: bold; font-size: 13px; color: #4a5568; width: 100%; }
         
         .fluid-group { width: 130px !important; }
         .fluid-inputs { display: flex; gap: 4px; }
         .fluid-inputs select { width: 60px; padding: 4px; font-size: 11px; }
         .fluid-inputs input { width: 65px; }
         
-        .btn-panel { display: flex; gap: 10px; margin-left: auto; }
+        .btn-panel { display: flex; gap: 10px; margin-left: auto; width: 100%; justify-content: flex-end; }
         .btn-add { background-color: #2b6cb0; color: white; border: none; border-radius: 4px; padding: 0 25px; font-weight: bold; cursor: pointer; height: 42px; font-size: 15px; }
         .btn-add:hover { background-color: #2c5282; }
         
@@ -106,10 +111,17 @@
         .chart-wrapper { width: 100%; border-top: 2px solid #000; border-bottom: 2px solid #000; background-color: #fff; position: relative; }
         canvas { display: block; width: 100%; height: 320px !important; }
         
-        .ucd-comments { padding: 10px 15px; background-color: #fff; display: flex; flex-direction: column; gap: 5px; }
+        /* 底部並排面板 (Comments 與 Bolus 表格) */
+        .bottom-split-panel { padding: 10px 15px; background-color: #fff; display: flex; gap: 20px; }
+        .comments-section { flex: 2; display: flex; flex-direction: column; gap: 5px; }
         .comments-title { font-weight: bold; font-size: 14px; }
-        .comments-box { width: 100%; border: none; border-bottom: 1px solid #718096; font-family: inherit; font-size: 13px; padding: 5px; resize: vertical; outline: none; background: transparent; min-height: 40px; }
+        .comments-box { width: 100%; border: none; border-bottom: 1px solid #718096; font-family: inherit; font-size: 13px; padding: 5px; resize: vertical; outline: none; background: transparent; min-height: 80px; flex-grow: 1; }
         
+        .bolus-section { flex: 1.2; display: flex; flex-direction: column; gap: 5px; border-left: 2px dashed #cbd5e0; padding-left: 20px; }
+        .bolus-record-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; margin-top: 5px; }
+        .bolus-record-table th { border: 1px solid #718096; padding: 4px; background-color: #edf2f7; font-weight: bold; color: #4a5568; }
+        .bolus-record-table td { border: 1px solid #718096; padding: 4px; font-weight: bold; color: #2d3748; }
+
         /* 底部輸出按鈕群組 */
         .bottom-export-panel { display: flex; justify-content: center; gap: 30px; margin-top: 30px; }
         .btn-export { color: white; border: none; border-radius: 6px; padding: 0 40px; font-weight: bold; cursor: pointer; height: 50px; font-size: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;}
@@ -140,7 +152,7 @@
             
             .chart-wrapper { height: 320px; }
             canvas { height: 320px !important; width: 100% !important; }
-            .ucd-comments { border: 2px solid #000; }
+            .bottom-split-panel { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
         }
     </style>
 </head>
@@ -149,71 +161,94 @@
 <div class="app-container">
 
     <div class="input-panel">
-        <div class="input-group time-group"><label>紀錄時間</label><input type="time" id="record-time"></div>
-        <div class="input-group"><label>Anesthetic</label><input type="text" id="anes" placeholder="%"></div>
-        <div class="input-group"><label>O2 L/min</label><input type="text" id="o2" placeholder="L/min"></div>
-        <div class="input-group"><label>SpO2</label><input type="number" id="spo2" placeholder="%"></div>
-        <div class="input-group"><label>ETCO2</label><input type="number" id="etco2" placeholder="mmHg"></div>
-        <div class="input-group"><label>Peak</label><input type="number" id="peak" placeholder="cmH2O"></div>
-        <div class="input-group"><label>TV</label><input type="number" id="tv" placeholder="ml"></div>
-        <div class="input-group"><label>RR</label><input type="number" id="rr" placeholder="bpm"></div>
         
-        <div style="width: 2px; background: #cbd5e0; margin: 0 5px;"></div>
-        <div class="input-group"><label>Pulse (•)</label><input type="number" id="pulse" placeholder="bpm"></div>
-        <div class="input-group"><label>Sys BP (V)</label><input type="number" id="sysBP" placeholder="mmHg"></div>
-        <div class="input-group"><label>Dia BP (^)</label><input type="number" id="diaBP" placeholder="mmHg"></div>
-        <div class="input-group"><label>Mean BP (x)</label><input type="number" id="meanBP" placeholder="mmHg"></div>
-        <div style="width: 2px; background: #cbd5e0; margin: 0 5px;"></div>
-        
-        <div class="input-group fluid-group">
-            <label>Fluids</label>
-            <div class="fluid-inputs">
-                <select id="fluid-type">
-                    <option value="LRS">LRS</option>
-                    <option value="0.9% NaCl">0.9% NaCl</option>
-                    <option value="RS">RS</option>
-                    <option value="NS">NS</option>
-                    <option value="Blood">Blood</option>
-                    <option value="Plasma">Plasma</option>
-                    <option value="Other">Other</option>
-                </select>
-                <input type="number" id="fluids" placeholder="ml">
-            </div>
+        <!-- 左側時間直列 -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="input-group time-group"><label>紀錄時間</label><input type="time" id="record-time"></div>
+            <!-- 恢復為 type="time" 供選單/手動輸入，保留獨立樣式 -->
+            <div class="input-group text-time-group"><label>Intubation</label><input type="time" id="intub-time" onchange="addTimeComment('Intubation', this.value)"></div>
+            <div class="input-group text-time-group"><label>Extubation</label><input type="time" id="extub-time" onchange="addTimeComment('Extubation', this.value)"></div>
         </div>
         
-        <div class="input-group"><label>Temp</label><input type="number" id="temp" step="0.1" placeholder="°C"></div>
-        <div class="input-group cri-group"><label>CRI</label><input type="text" id="cri" placeholder="e.g. D3 F2"></div>
+        <div style="width: 2px; background: #cbd5e0; margin: 0 5px; align-self: stretch;"></div>
         
-        <div class="plan-block" style="width: 100%; margin-top: 15px; border-color: #cbd5e0; box-shadow: none;">
-            <div class="plan-block-header" style="background-color: #2b6cb0;">
-                <span>💉 術中針劑給予</span>
-                <div>
-                    <select class="drug-selector" onchange="addIntraopBolus(this)" style="font-weight:normal; font-size: 11px;">
-                        <option value="">+ 選擇給藥...</option>
-                        <option value="CUSTOM">自訂藥物 (Custom)</option>
-                    </select>
+        <!-- 右側數值與針劑輸入列 -->
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; flex: 1; align-items: flex-start; align-content: flex-start;">
+            
+            <!-- 第一列數值 (包含 Pulse, BP) -->
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; width: 100%; align-items: flex-end;">
+                <div class="input-group"><label>Anesthetic</label><input type="text" id="anes" placeholder="%"></div>
+                <div class="input-group"><label>O2 L/min</label><input type="text" id="o2" placeholder="L/min"></div>
+                <div class="input-group"><label>SpO2</label><input type="number" id="spo2" placeholder="%"></div>
+                <div class="input-group"><label>ETCO2</label><input type="number" id="etco2" placeholder="mmHg"></div>
+                <div class="input-group"><label>Peak</label><input type="number" id="peak" placeholder="cmH2O"></div>
+                <div class="input-group"><label>TV</label><input type="number" id="tv" placeholder="ml"></div>
+                <div class="input-group"><label>RR</label><input type="number" id="rr" placeholder="bpm"></div>
+                
+                <div style="width: 2px; background: #cbd5e0; margin: 0 5px; height: 35px; align-self: flex-end;"></div>
+                
+                <div class="input-group"><label>Pulse (•)</label><input type="number" id="pulse" placeholder="bpm"></div>
+                <div class="input-group"><label>Sys BP (V)</label><input type="number" id="sysBP" placeholder="mmHg"></div>
+                <div class="input-group"><label>Dia BP (^)</label><input type="number" id="diaBP" placeholder="mmHg"></div>
+                <div class="input-group"><label>Mean BP (x)</label><input type="number" id="meanBP" placeholder="mmHg"></div>
+            </div>
+            
+            <!-- 第二列數值 (維持 Fluids, Temp, CRI) -->
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; width: 100%; align-items: flex-end;">
+                <div class="input-group fluid-group">
+                    <label>Fluids</label>
+                    <div class="fluid-inputs">
+                        <select id="fluid-type">
+                            <option value="LRS">LRS</option>
+                            <option value="0.9% NaCl">0.9% NaCl</option>
+                            <option value="RS">RS</option>
+                            <option value="NS">NS</option>
+                            <option value="Blood">Blood</option>
+                            <option value="Plasma">Plasma</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <input type="number" id="fluids" placeholder="ml">
+                    </div>
+                </div>
+                
+                <div class="input-group"><label>Temp</label><input type="number" id="temp" step="0.1" placeholder="°C"></div>
+                <div class="input-group cri-group" style="width: 120px;"><label>CRI</label><input type="text" id="cri" placeholder="e.g. D3 F2"></div>
+            </div>
+            
+            <!-- 術中針劑區塊 -->
+            <div class="plan-block" style="width: 100%; margin-top: 5px; margin-bottom: 0; border-color: #cbd5e0; box-shadow: none;">
+                <div class="plan-block-header" style="background-color: #2b6cb0;">
+                    <span>💉 術中針劑/Bolus藥物</span>
+                    <div>
+                        <select class="drug-selector" onchange="addIntraopBolus(this)" style="font-weight:normal; font-size: 11px;">
+                            <option value="">+ 選擇給藥...</option>
+                            <option value="CUSTOM">自訂藥物 (Custom)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="plan-block-body">
+                    <table class="med-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 20%;">Drug Name</th>
+                                <th style="width: 10%;">Time</th>
+                                <th style="width: 10%;">Dose</th>
+                                <th style="width: 10%;">Unit</th>
+                                <th style="width: 10%;">Conc. (mg/ml)</th>
+                                <th style="width: 10%;">Total (mg)</th>
+                                <th style="width: 10%;">Amount (mls)</th>
+                                <th style="width: 15%;">Route</th>
+                                <th style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-intraop"></tbody>
+                    </table>
                 </div>
             </div>
-            <div class="plan-block-body">
-                <table class="med-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 25%;">Drug Name</th>
-                            <th style="width: 10%;">Dose</th>
-                            <th style="width: 10%;">Unit</th>
-                            <th style="width: 15%;">Conc. (mg/ml)</th>
-                            <th style="width: 10%;">Total (mg)</th>
-                            <th style="width: 10%;">Amount (mls)</th>
-                            <th style="width: 15%;">Route</th>
-                            <th style="width: 5%;"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="tbody-intraop"></tbody>
-                </table>
-            </div>
+            
         </div>
-
-        <div class="btn-panel" style="margin-top: 10px; width: 100%; display: flex; justify-content: flex-end;">
+        
+        <div class="btn-panel">
             <button class="btn-add" onclick="addRecord()">填入下方網格記錄表 ⬇</button>
         </div>
     </div>
@@ -479,12 +514,35 @@
         
         <div id="grids-wrapper" style="width: 100%;"></div>
 
-        <div class="ucd-comments" style="margin-top: 10px;">
-            <div class="comments-title">Comments:</div>
-            <textarea class="comments-box" placeholder="輸入備註或特殊事件紀錄..."></textarea>
+        <!-- 底部並排區塊 -->
+        <div class="bottom-split-panel">
+            <div class="comments-section">
+                <div class="comments-title">Comments:</div>
+                <textarea id="global-comments" class="comments-box" placeholder="輸入備註或特殊事件紀錄..."></textarea>
+            </div>
+            <div class="bolus-section">
+                <div class="comments-title">術中針劑 / Bolus 藥物</div>
+                <table class="bolus-record-table">
+                    <thead>
+                        <tr>
+                            <th>Drug Name</th>
+                            <th>Time</th>
+                            <th>Dose</th>
+                            <th>Total (mg)</th>
+                            <th>Amount</th>
+                            <th>Route</th>
+                        </tr>
+                    </thead>
+                    <tbody id="global-bolus-tbody">
+                        <!-- 動態寫入的針劑資料 -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-    </div> <div class="bottom-export-panel">
+    </div> 
+    
+    <div class="bottom-export-panel">
         <button id="btnPdf" class="btn-export btn-export-pdf" onclick="exportPDFNative()">📄 列印 / 另存 PDF 病歷</button>
         <button class="btn-export btn-export-csv" onclick="exportCSV()">📊 匯出 CSV (Numbers) 資料庫</button>
     </div>
@@ -574,7 +632,6 @@ const criOptionsHTML = `
 
 // 💡 建立置中的針筒圖示 (Emoji) 讓 Chart.js 使用
 const syringeIcon = new Image();
-// 調整 svg 的 text-anchor 與 x/y，確保它精準對齊座標點
 syringeIcon.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><text x="12" y="12" font-size="16" text-anchor="middle" dominant-baseline="central">💉</text></svg>';
 
 // ================= Y 軸自適應轉換公式 =================
@@ -593,7 +650,7 @@ const SLOTS_PER_PAGE = 30;
 let currentGlobalSlot = 0; 
 let charts = [];
 let timeInputEdited = false;
-let maxVisiblePage = 1; // 💡 新增：追蹤目前已經開啟的最大頁數
+let maxVisiblePage = 1;
 
 const topRowDefs = [
     { id: 'row-time', name: 'Time', bg: '#e2e8f0' },
@@ -614,8 +671,7 @@ const bottomRowDefs = [
     { id: 'row-time-bottom', name: 'Time', bg: '#e2e8f0' },
     { id: 'row-fluids', name: 'Fluids' },
     { id: 'row-temp', name: 'Temp (°C)' },
-    { id: 'row-cri', name: 'CRI', height: '25px', cellStyle: 'white-space: normal; padding: 2px;' },
-    { id: 'row-bolus', name: '術中針劑', height: '25px', cellStyle: 'white-space: normal; padding: 2px; color: #000 !important;' }
+    { id: 'row-cri', name: 'CRI', height: '25px', cellStyle: 'white-space: normal; padding: 2px;' }
 ];
 
 function buildMultiPageGrids() {
@@ -623,7 +679,6 @@ function buildMultiPageGrids() {
     let gridHTML = '';
 
     for (let p = 1; p <= TOTAL_PAGES; p++) {
-        // 💡 修改：加入 page-hidden 類別將大於第 1 頁的區塊暫時隱藏
         gridHTML += `<div class="page-view page-${p} ${p === 1 ? 'active' : ''} ${p > 1 ? 'page-hidden' : ''}">`;
         if (p > 1) {
             gridHTML += `<div class="print-only-header">Evergreen Anesthesia Record - Page ${p} &nbsp;&nbsp;|&nbsp;&nbsp; Animal ID: <span class="print-id-sync"></span></div>`;
@@ -786,7 +841,6 @@ window.onload = function() {
     setInterval(() => { if (!timeInputEdited) { updateToNow(); } }, 30000);
 };
 
-// 💡 新增：手動增加下一頁的功能邏輯
 function addNewPage(autoSwitch = true) {
     if (maxVisiblePage >= TOTAL_PAGES) {
         if (autoSwitch) alert('已達到最大頁數限制 (8頁)！');
@@ -794,18 +848,13 @@ function addNewPage(autoSwitch = true) {
     }
     maxVisiblePage++;
     
-    // 顯示按鈕
     document.getElementById(`btn-page-${maxVisiblePage}`).style.display = 'inline-block';
-    
-    // 移除隱藏標籤，讓它可以在列印時出現
     document.querySelector(`.page-view.page-${maxVisiblePage}`).classList.remove('page-hidden');
     
-    // 若達到極限，隱藏新增按鈕
     if (maxVisiblePage >= TOTAL_PAGES) {
         document.getElementById('btn-add-next-page').style.display = 'none';
     }
     
-    // 自動切換到該頁
     if (autoSwitch) {
         switchPage(maxVisiblePage);
     }
@@ -823,7 +872,18 @@ function syncPatientId(val) {
     document.querySelectorAll('.print-id-sync').forEach(el => el.textContent = val);
 }
 
-// 💡 智慧字體縮小工具
+// 自動記錄插拔管時間
+function addTimeComment(eventLabel, timeVal) {
+    if (!timeVal) return;
+    const commentBox = document.getElementById('global-comments');
+    const newComment = `[${timeVal}] ${eventLabel}`;
+    if (commentBox.value) {
+        commentBox.value += '\n' + newComment;
+    } else {
+        commentBox.value = newComment;
+    }
+}
+
 function autoFitText(elementId) {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -843,7 +903,6 @@ function addRecord() {
 
     let targetPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
     
-    // 💡 修改：若需要記錄的頁數大於目前解鎖的最大頁數，自動進行解鎖與新增
     while (targetPage > maxVisiblePage && maxVisiblePage < TOTAL_PAGES) {
         addNewPage(false);
     }
@@ -884,18 +943,32 @@ function addRecord() {
     document.getElementById(`row-diabp-${currentGlobalSlot}`).textContent = diaNum !== null ? diaNum : '-';
     document.getElementById(`row-meanbp-${currentGlobalSlot}`).textContent = meanNum !== null ? meanNum : '-';
 
-    let bolusTextArray = [];
     let bolusNameOnlyArray = [];
     const intraopRows = document.querySelectorAll('#tbody-intraop tr');
     intraopRows.forEach(row => {
         const dName = row.querySelector('.r-drug').value;
+        let bTime = row.querySelector('.r-time').value;
+        if (!bTime) bTime = timeStr; // 未輸入時間則自動帶入當前主紀錄時間
         const dose = row.querySelector('.r-dose').value;
         const unit = row.querySelector('.r-unit').value;
+        const total = row.querySelector('.r-total').value;
         const amt = row.querySelector('.r-amt').value;
         const route = row.querySelector('.r-route').value;
+        
         if(dName) {
-            bolusTextArray.push(`${dName} ${dose}${unit}(${amt}ml) ${route}`);
             bolusNameOnlyArray.push(dName.substring(0, 6)); 
+            
+            // 寫入下方的 Bolus 專屬表格
+            const newTr = document.createElement('tr');
+            newTr.innerHTML = `
+                <td>${dName}</td>
+                <td>${bTime}</td>
+                <td>${dose} ${unit}</td>
+                <td>${total}</td>
+                <td>${amt} ml</td>
+                <td>${route}</td>
+            `;
+            document.getElementById('global-bolus-tbody').appendChild(newTr);
         }
     });
 
@@ -925,12 +998,7 @@ function addRecord() {
     const criElem = document.getElementById('cri');
     document.getElementById(`row-cri-${currentGlobalSlot}`).textContent = (criElem && criElem.value) ? criElem.value : '-';
     
-    const bolusCellId = `row-bolus-${currentGlobalSlot}`;
-    document.getElementById(bolusCellId).innerHTML = bolusTextArray.length > 0 ? bolusTextArray.join('<br>') : '-';
-    
-    // 執行自動縮小字體功能
     autoFitText(`row-cri-${currentGlobalSlot}`);
-    autoFitText(bolusCellId);
 
     currentGlobalSlot++;
 
@@ -941,7 +1009,7 @@ function addRecord() {
     document.getElementById('record-time').value = String(realNow.getHours()).padStart(2, '0') + ':' + String(realNow.getMinutes()).padStart(2, '0');
 }
 
-// 💡 所有給藥的 Route 改為純文字手動輸入 (包含麻醉計畫與術中針劑)
+// 給藥輸入紀錄邏輯
 function addDrugToSection(tbodyId, selectElem) {
     const drug = selectElem.value;
     if (!drug) return;
@@ -965,7 +1033,7 @@ function addDrugToSection(tbodyId, selectElem) {
         <td style="width: 10%;"><input type="number" class="r-conc" value="${info.conc}" step="0.01" oninput="calcRegular(this)"></td>
         <td style="width: 10%;"><input type="number" class="r-total calc-result" readonly tabindex="-1"></td>
         <td style="width: 10%;"><input type="number" class="r-amt calc-result" readonly tabindex="-1"></td>
-        <td style="width: 10%;"><input type="text" class="r-route" placeholder=""></td>
+        <td style="width: 10%;"><input type="text" class="r-route" placeholder="輸入途徑"></td>
         <td style="width: 10%;"><input type="time"></td>
         <td style="width: 5%;"><button class="btn-del" onclick="this.closest('tr').remove();">×</button></td>
     `;
@@ -983,12 +1051,13 @@ function addIntraopBolus(selectElem) {
     
     tr.innerHTML = `
         <td style="text-align: left; padding-left: 5px;"><input type="text" value="${dName}" class="r-drug" placeholder="Drug Name" style="text-align: left; font-weight:bold;"></td>
-        <td style="width: 12%;"><input type="number" class="r-dose" step="0.01" oninput="calcRegular(this)"></td>
-        <td style="width: 12%;"><select class="r-unit" onchange="calcRegular(this)"><option value="mg/kg">mg/kg</option><option value="mcg/kg">mcg/kg</option></select></td>
-        <td style="width: 15%;"><input type="number" class="r-conc" step="0.01" oninput="calcRegular(this)"></td>
-        <td style="width: 12%;"><input type="number" class="r-total calc-result" readonly tabindex="-1"></td>
-        <td style="width: 12%;"><input type="number" class="r-amt calc-result" readonly tabindex="-1"></td>
-        <td style="width: 15%;"><input type="text" class="r-route" placeholder=""></td>
+        <td style="width: 10%;"><input type="time" class="r-time"></td>
+        <td style="width: 10%;"><input type="number" class="r-dose" step="0.01" oninput="calcRegular(this)"></td>
+        <td style="width: 10%;"><select class="r-unit" onchange="calcRegular(this)"><option value="mg/kg">mg/kg</option><option value="mcg/kg">mcg/kg</option></select></td>
+        <td style="width: 10%;"><input type="number" class="r-conc" step="0.01" oninput="calcRegular(this)"></td>
+        <td style="width: 10%;"><input type="number" class="r-total calc-result" readonly tabindex="-1"></td>
+        <td style="width: 10%;"><input type="number" class="r-amt calc-result" readonly tabindex="-1"></td>
+        <td style="width: 15%;"><input type="text" class="r-route" placeholder="輸入途徑"></td>
         <td style="width: 5%;"><button class="btn-del" onclick="this.closest('tr').remove();">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -1125,7 +1194,7 @@ function exportCSV() {
     }
 
     let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
-    let headers = ["Time", "Anesthetic", "O2 L/min", "SpO2 (%)", "ETCO2 (mmHg)", "Peak (cmH2O)", "TV (ml)", "RR (bpm)", "Pulse (bpm)", "Sys BP (mmHg)", "Dia BP (mmHg)", "Mean BP (mmHg)", "Fluids", "Temp (°C)", "CRI", "Bolus"];
+    let headers = ["Time", "Anesthetic", "O2 L/min", "SpO2 (%)", "ETCO2 (mmHg)", "Peak (cmH2O)", "TV (ml)", "RR (bpm)", "Pulse (bpm)", "Sys BP (mmHg)", "Dia BP (mmHg)", "Mean BP (mmHg)", "Fluids", "Temp (°C)", "CRI"];
     csvContent += headers.join(",") + "\n";
 
     for(let i = 0; i < currentGlobalSlot; i++) {
@@ -1144,8 +1213,7 @@ function exportCSV() {
             document.getElementById(`row-meanbp-${i}`).textContent,
             document.getElementById(`row-fluids-${i}`).textContent,
             document.getElementById(`row-temp-${i}`).textContent,
-            document.getElementById(`row-cri-${i}`).textContent,
-            document.getElementById(`row-bolus-${i}`).innerHTML.replace(/<br>/g, '; ')
+            document.getElementById(`row-cri-${i}`).textContent
         ];
         let escapedRow = row.map(val => '"' + String(val).replace(/"/g, '""') + '"');
         csvContent += escapedRow.join(",") + "\n";
