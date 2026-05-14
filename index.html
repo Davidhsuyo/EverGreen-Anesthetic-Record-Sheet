@@ -115,7 +115,7 @@
         .bottom-split-panel { padding: 10px 15px; background-color: #fff; display: flex; gap: 20px; }
         .comments-section { flex: 2; display: flex; flex-direction: column; gap: 5px; }
         .comments-title { font-weight: bold; font-size: 14px; }
-        .comments-box { width: 100%; border: none; border-bottom: 1px solid #718096; font-family: inherit; font-size: 13px; padding: 5px; resize: vertical; outline: none; background: transparent; min-height: 80px; flex-grow: 1; }
+        .comments-box { width: 100%; border: none; border-bottom: 1px solid #718096; font-family: inherit; font-size: 13px; padding: 5px; outline: none; background: transparent; min-height: 80px; flex-grow: 1; resize: none; overflow: hidden; }
         
         .bolus-section { flex: 1.2; display: flex; flex-direction: column; gap: 5px; border-left: 2px dashed #cbd5e0; padding-left: 20px; }
         .bolus-record-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; margin-top: 5px; }
@@ -152,7 +152,9 @@
             
             .chart-wrapper { height: 320px; }
             canvas { height: 320px !important; width: 100% !important; }
-            .bottom-split-panel { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
+            
+            /* 將 Bottom split panel 的邊框移到這，避免頁面多出額外的框 */
+            .bottom-split-panel { break-inside: avoid; border-top: 2px solid #000; margin-top: 0; }
         }
     </style>
 </head>
@@ -165,7 +167,7 @@
         <!-- 左側時間直列 -->
         <div style="display: flex; flex-direction: column; gap: 8px;">
             <div class="input-group time-group"><label>紀錄時間</label><input type="time" id="record-time"></div>
-            <!-- 恢復為 type="time" 供選單/手動輸入，保留獨立樣式 -->
+            <!-- 恢復為 type="time" 供選單/手維輸入，保留獨立樣式 -->
             <div class="input-group text-time-group"><label>Intubation</label><input type="time" id="intub-time" onchange="addTimeComment('Intubation', this.value)"></div>
             <div class="input-group text-time-group"><label>Extubation</label><input type="time" id="extub-time" onchange="addTimeComment('Extubation', this.value)"></div>
         </div>
@@ -514,32 +516,6 @@
         
         <div id="grids-wrapper" style="width: 100%;"></div>
 
-        <!-- 底部並排區塊 -->
-        <div class="bottom-split-panel">
-            <div class="comments-section">
-                <div class="comments-title">Comments:</div>
-                <textarea id="global-comments" class="comments-box" placeholder="輸入備註或特殊事件紀錄..."></textarea>
-            </div>
-            <div class="bolus-section">
-                <div class="comments-title">術中針劑 / Bolus 藥物</div>
-                <table class="bolus-record-table">
-                    <thead>
-                        <tr>
-                            <th>Drug Name</th>
-                            <th>Time</th>
-                            <th>Dose</th>
-                            <th>Total (mg)</th>
-                            <th>Amount</th>
-                            <th>Route</th>
-                        </tr>
-                    </thead>
-                    <tbody id="global-bolus-tbody">
-                        <!-- 動態寫入的針劑資料 -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
     </div> 
     
     <div class="bottom-export-panel">
@@ -550,6 +526,12 @@
 </div>
 
 <script>
+// ================= 自動縮放 Textarea 功能 =================
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+}
+
 // ================= 藥物資料庫 =================
 const drugDB = {
     "Dexmedetomidine": { conc: 0.5, dose: 5, unit: "mcg/kg", ref: "參考: 1–20 mcg/kg" },
@@ -699,7 +681,36 @@ function buildMultiPageGrids() {
             }
             gridHTML += `</tr>`;
         });
-        gridHTML += `</table></div>`;
+        gridHTML += `</table>`;
+        
+        // 頁面獨立的 Comments 與 Bolus 區塊
+        gridHTML += `
+        <div class="bottom-split-panel" style="border-top: 2px solid #000; margin-top: -2px;">
+            <div class="comments-section">
+                <div class="comments-title">Comments:</div>
+                <textarea id="comments-${p}" class="comments-box" placeholder="輸入備註或特殊事件紀錄..." oninput="autoResize(this)"></textarea>
+            </div>
+            <div class="bolus-section">
+                <div class="comments-title">術中針劑 / Bolus 藥物</div>
+                <table class="bolus-record-table">
+                    <thead>
+                        <tr>
+                            <th>Drug Name</th>
+                            <th>Time</th>
+                            <th>Dose</th>
+                            <th>Total (mg)</th>
+                            <th>Amount</th>
+                            <th>Route</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bolus-tbody-${p}">
+                        <!-- 動態寫入的針劑資料將附加於此 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+
+        gridHTML += `</div>`;
     }
     wrapper.innerHTML = gridHTML;
 }
@@ -872,16 +883,22 @@ function syncPatientId(val) {
     document.querySelectorAll('.print-id-sync').forEach(el => el.textContent = val);
 }
 
-// 自動記錄插拔管時間
+// 自動記錄插拔管時間 (對應到當下準備寫入的頁面)
 function addTimeComment(eventLabel, timeVal) {
     if (!timeVal) return;
-    const commentBox = document.getElementById('global-comments');
+    
+    let targetPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
+    if (targetPage > TOTAL_PAGES) targetPage = TOTAL_PAGES;
+
+    const commentBox = document.getElementById(`comments-${targetPage}`);
     const newComment = `[${timeVal}] ${eventLabel}`;
+    
     if (commentBox.value) {
         commentBox.value += '\n' + newComment;
     } else {
         commentBox.value = newComment;
     }
+    autoResize(commentBox); // 更新高度
 }
 
 function autoFitText(elementId) {
@@ -958,7 +975,7 @@ function addRecord() {
         if(dName) {
             bolusNameOnlyArray.push(dName.substring(0, 6)); 
             
-            // 寫入下方的 Bolus 專屬表格
+            // 寫入下方的 Bolus 專屬表格 (針對當前紀錄的頁數)
             const newTr = document.createElement('tr');
             newTr.innerHTML = `
                 <td>${dName}</td>
@@ -968,7 +985,7 @@ function addRecord() {
                 <td>${amt} ml</td>
                 <td>${route}</td>
             `;
-            document.getElementById('global-bolus-tbody').appendChild(newTr);
+            document.getElementById(`bolus-tbody-${targetPage}`).appendChild(newTr);
         }
     });
 
