@@ -130,6 +130,10 @@
         .btn-export-pdf:hover { background-color: #c53030; transform: translateY(-2px); }
         .btn-export-csv { background-color: #38a169; }
         .btn-export-csv:hover { background-color: #276749; transform: translateY(-2px); }
+        .btn-export-json { background-color: #2b6cb0; }
+        .btn-export-json:hover { background-color: #2c5282; transform: translateY(-2px); }
+        .btn-import-json { background-color: #ecc94b; color: #2d3748; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0 40px; }
+        .btn-import-json:hover { background-color: #d69e2e; transform: translateY(-2px); }
         
         /* ================= 完美 PDF 列印樣式 (Print CSS) ================= */
         @media print {
@@ -516,6 +520,11 @@
     <div class="bottom-export-panel">
         <button id="btnPdf" class="btn-export btn-export-pdf" onclick="exportPDFNative()">📄 列印 / 另存 PDF 病歷</button>
         <button class="btn-export btn-export-csv" onclick="exportCSV()">📊 匯出 CSV (Numbers) 資料庫</button>
+        <button class="btn-export btn-export-json" onclick="saveToJSON()">💾 儲存專屬存檔 (.json)</button>
+        <label class="btn-export btn-import-json">
+            📂 讀取專屬存檔
+            <input type="file" accept=".json" style="display: none;" onchange="loadFromJSON(event)">
+        </label>
     </div>
 
 </div>
@@ -1317,6 +1326,145 @@ function exportCSV() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+// ================= JSON 存檔與讀檔功能 =================
+
+function saveToJSON() {
+    const state = {
+        globalSlot: currentGlobalSlot,
+        maxPage: maxVisiblePage,
+        inputs: {},
+        cells: {},
+        bolus: {},
+        comments: {}
+    };
+
+    const formElements = document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea');
+    formElements.forEach((el, index) => {
+        state.inputs[index] = (el.type === 'checkbox') ? el.checked : el.value;
+    });
+
+    document.querySelectorAll('.data-cell').forEach(el => {
+        if (el.id && el.textContent) {
+            state.cells[el.id] = el.textContent;
+        }
+    });
+
+    for (let i = 1; i <= TOTAL_PAGES; i++) {
+        const tbody = document.getElementById(`bolus-tbody-${i}`);
+        if (tbody) state.bolus[`bolus-tbody-${i}`] = tbody.innerHTML;
+        
+        const comment = document.getElementById(`comments-${i}`);
+        if (comment) state.comments[`comments-${i}`] = comment.value;
+        
+        if (charts[i-1] && charts[i-1].data.bolusNames) {
+            state[`chartBolusNames-${i}`] = charts[i-1].data.bolusNames;
+        }
+    }
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    
+    let idValue = document.querySelector('.print-id-sync').textContent || 'Unknown';
+    let dateValue = new Date().toISOString().slice(0, 10);
+    downloadAnchorNode.setAttribute("download", `Anesthesia_${idValue}_${dateValue}.json`);
+    
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+function loadFromJSON(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const state = JSON.parse(e.target.result);
+            
+            while (maxVisiblePage < state.maxPage) {
+                addNewPage(false);
+            }
+            currentGlobalSlot = state.globalSlot;
+
+            const formElements = document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea');
+            formElements.forEach((el, index) => {
+                if (state.inputs[index] !== undefined) {
+                    if (el.type === 'checkbox') el.checked = state.inputs[index];
+                    else el.value = state.inputs[index];
+                }
+            });
+
+            for (const id in state.cells) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.textContent = state.cells[id];
+                    
+                    const idParts = id.split('-');
+                    const rowType = idParts[1]; 
+                    const globalSlot = parseInt(idParts[2]);
+                    const targetPage = Math.floor(globalSlot / SLOTS_PER_PAGE) + 1;
+                    const localSlot = globalSlot % SLOTS_PER_PAGE;
+                    const currentChart = charts[targetPage - 1];
+                    
+                    let val = state.cells[id];
+                    let num = val === '-' || val === '' ? null : Number(val);
+                    let dsIndex = -1;
+                    
+                    switch (rowType) {
+                        case 'pulse': dsIndex = 0; break;
+                        case 'sysbp': dsIndex = 1; break;
+                        case 'diabp': dsIndex = 2; break;
+                        case 'meanbp': dsIndex = 3; break;
+                        case 'spo2': dsIndex = 4; break;
+                        case 'etco2': dsIndex = 5; break;
+                        case 'rr': dsIndex = 6; break;
+                        case 'temp': dsIndex = 7; break;
+                    }
+                    if (dsIndex !== -1 && currentChart) {
+                        currentChart.data.datasets[dsIndex].data[localSlot] = mapY(num);
+                    }
+                }
+            }
+
+            for (let i = 1; i <= TOTAL_PAGES; i++) {
+                const tbodyId = `bolus-tbody-${i}`;
+                if (state.bolus[tbodyId]) document.getElementById(tbodyId).innerHTML = state.bolus[tbodyId];
+                
+                const commentId = `comments-${i}`;
+                if (state.comments[commentId]) {
+                    const commentEl = document.getElementById(commentId);
+                    commentEl.value = state.comments[commentId];
+                    autoResize(commentEl);
+                }
+                
+                if (state[`chartBolusNames-${i}`] && charts[i-1]) {
+                    charts[i-1].data.bolusNames = state[`chartBolusNames-${i}`];
+                    state[`chartBolusNames-${i}`].forEach((name, idx) => {
+                        if (name) charts[i-1].data.datasets[8].data[idx] = mapY(280);
+                    });
+                }
+            }
+
+            charts.forEach(c => c.update());
+            updateGlobalCalculations();
+            
+            let lastPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
+            if (lastPage > TOTAL_PAGES) lastPage = TOTAL_PAGES;
+            switchPage(lastPage);
+
+            alert("病歷資料讀取成功！");
+        } catch (err) {
+            alert("檔案格式錯誤或讀取失敗！");
+            console.error(err);
+        }
+        
+        event.target.value = '';
+    };
+    reader.readAsText(file);
 }
 </script>
 </body>
