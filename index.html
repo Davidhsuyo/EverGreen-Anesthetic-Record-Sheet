@@ -665,8 +665,9 @@ function updateChartFromGrid(el) {
     const idParts = el.id.split('-');
     if (idParts.length < 3) return;
     const rowType = idParts[1]; 
-    const globalSlot = parseInt(idParts[2]);
-
+    if (rowType === 'time' || rowType === 'time-bottom') return;
+    
+    const globalSlot = parseInt(idParts[idParts.length - 1]);
     const targetPage = Math.floor(globalSlot / SLOTS_PER_PAGE) + 1;
     const localSlot = globalSlot % SLOTS_PER_PAGE;
     const currentChart = charts[targetPage - 1];
@@ -955,78 +956,87 @@ function addRecord() {
     const timeStr = document.getElementById('record-time').value;
     if(!timeStr) { alert('請輸入紀錄時間！'); return; }
 
-    // 尋找是否已經有相同時間的紀錄
-    let targetGlobalSlot = currentGlobalSlot;
-    let isOverwrite = false;
+    // 1. 提取所有現存網格紀錄
+    let records = [];
     for (let i = 0; i < currentGlobalSlot; i++) {
-        if (document.getElementById(`row-time-${i}`).textContent === timeStr) {
-            targetGlobalSlot = i;
-            isOverwrite = true;
-            break;
-        }
+        let t = document.getElementById(`row-time-${i}`).textContent;
+        if (!t || t === '-') continue;
+        let targetPage = Math.floor(i / SLOTS_PER_PAGE) + 1;
+        let localSlot = i % SLOTS_PER_PAGE;
+        records.push({
+            time: t,
+            anes: document.getElementById(`row-anes-${i}`).textContent,
+            o2: document.getElementById(`row-o2-${i}`).textContent,
+            spo2: document.getElementById(`row-spo2-${i}`).textContent,
+            etco2: document.getElementById(`row-etco2-${i}`).textContent,
+            peak: document.getElementById(`row-peak-${i}`).textContent,
+            tv: document.getElementById(`row-tv-${i}`).textContent,
+            rr: document.getElementById(`row-rr-${i}`).textContent,
+            pulse: document.getElementById(`row-pulse-${i}`).textContent,
+            sysbp: document.getElementById(`row-sysbp-${i}`).textContent,
+            diabp: document.getElementById(`row-diabp-${i}`).textContent,
+            meanbp: document.getElementById(`row-meanbp-${i}`).textContent,
+            fluids: document.getElementById(`row-fluids-${i}`).textContent,
+            temp: document.getElementById(`row-temp-${i}`).textContent,
+            cri: document.getElementById(`row-cri-${i}`).textContent,
+            bolusNames: charts[targetPage - 1].data.bolusNames[localSlot] || ''
+        });
     }
 
-    let targetPage = Math.floor(targetGlobalSlot / SLOTS_PER_PAGE) + 1;
-    
-    while (targetPage > maxVisiblePage && maxVisiblePage < TOTAL_PAGES) {
-        addNewPage(false);
+    // 2. 尋找或建立當前時間的紀錄物件
+    let record = records.find(r => r.time === timeStr);
+    let isOverwrite = !!record;
+    if (!record) {
+        record = { time: timeStr, anes:'-', o2:'-', spo2:'-', etco2:'-', peak:'-', tv:'-', rr:'-', pulse:'-', sysbp:'-', diabp:'-', meanbp:'-', fluids:'-', temp:'-', cri:'-', bolusNames: '' };
+        records.push(record);
     }
-    
-    let localSlot = targetGlobalSlot % SLOTS_PER_PAGE;
-    switchPage(targetPage);
 
-    document.getElementById(`row-time-${targetGlobalSlot}`).textContent = timeStr;
-    document.getElementById(`row-time-bottom-${targetGlobalSlot}`).textContent = timeStr;
-
-    // 定義更新文字的輔助函式：
-    // 如果是新紀錄(!isOverwrite)，空值就補 '-'；
-    // 如果是合併覆寫模式(isOverwrite)，只有當下輸入框「有值」才覆寫，若是空值就略過，保留原本表格內的數據。
-    const updateText = (elId, inputId) => {
-        const inputVal = document.getElementById(inputId).value;
-        const el = document.getElementById(elId);
+    // 3. 更新各項生理數值
+    const updateVal = (key, inputId) => {
+        const val = document.getElementById(inputId).value;
         if (!isOverwrite) {
-            el.textContent = inputVal !== '' ? inputVal : '-';
-        } else if (inputVal !== '') {
-            el.textContent = inputVal;
+            record[key] = val !== '' ? val : '-';
+        } else if (val !== '') {
+            record[key] = val;
         }
     };
 
-    updateText(`row-anes-${targetGlobalSlot}`, 'anes');
-    updateText(`row-o2-${targetGlobalSlot}`, 'o2');
-    updateText(`row-spo2-${targetGlobalSlot}`, 'spo2');
-    updateText(`row-etco2-${targetGlobalSlot}`, 'etco2');
-    updateText(`row-peak-${targetGlobalSlot}`, 'peak');
-    updateText(`row-tv-${targetGlobalSlot}`, 'tv');
-    updateText(`row-rr-${targetGlobalSlot}`, 'rr');
-    
-    updateText(`row-pulse-${targetGlobalSlot}`, 'pulse');
-    updateText(`row-sysbp-${targetGlobalSlot}`, 'sysBP');
-    updateText(`row-diabp-${targetGlobalSlot}`, 'diaBP');
-    updateText(`row-meanbp-${targetGlobalSlot}`, 'meanBP');
-    
-    updateText(`row-temp-${targetGlobalSlot}`, 'temp');
-    
-    // Fluids 欄位特殊處理
+    updateVal('anes', 'anes'); updateVal('o2', 'o2'); updateVal('spo2', 'spo2');
+    updateVal('etco2', 'etco2'); updateVal('peak', 'peak'); updateVal('tv', 'tv');
+    updateVal('rr', 'rr'); updateVal('pulse', 'pulse'); updateVal('sysbp', 'sysBP');
+    updateVal('diabp', 'diaBP'); updateVal('meanbp', 'meanBP'); updateVal('temp', 'temp');
+
     const fluidType = document.getElementById('fluid-type').value;
     const fluidAmt = document.getElementById('fluids').value;
-    const fluidCell = document.getElementById(`row-fluids-${targetGlobalSlot}`);
-    if (!isOverwrite) {
-        fluidCell.textContent = fluidAmt !== '' ? `${fluidType} ${fluidAmt}` : '-';
-    } else if (fluidAmt !== '') {
-        fluidCell.textContent = `${fluidType} ${fluidAmt}`;
-    }
+    if (!isOverwrite) { record.fluids = fluidAmt !== '' ? `${fluidType} ${fluidAmt}` : '-'; }
+    else if (fluidAmt !== '') { record.fluids = `${fluidType} ${fluidAmt}`; }
 
-    // CRI 特殊處理
     const criElem = document.getElementById('cri');
-    const criCell = document.getElementById(`row-cri-${targetGlobalSlot}`);
-    if (!isOverwrite) {
-        criCell.textContent = (criElem && criElem.value) ? criElem.value : '-';
-    } else if (criElem && criElem.value !== '') {
-        criCell.textContent = criElem.value;
+    if (!isOverwrite) { record.cri = (criElem && criElem.value) ? criElem.value : '-'; }
+    else if (criElem && criElem.value !== '') { record.cri = criElem.value; }
+
+    // 4. 提取下方的所有歷史 Bolus 紀錄
+    let boluses = [];
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        const tbody = document.getElementById(`bolus-tbody-${p}`);
+        if (tbody) {
+            tbody.querySelectorAll('tr').forEach(tr => {
+                const tds = tr.querySelectorAll('td');
+                if (tds.length === 6) {
+                    boluses.push({
+                        dName: tds[0].textContent,
+                        bTime: tds[1].textContent,
+                        doseUnit: tds[2].textContent,
+                        total: tds[3].textContent,
+                        amt: tds[4].textContent,
+                        route: tds[5].textContent
+                    });
+                }
+            });
+        }
     }
 
-    // Bolus 處理
-    let bolusNameOnlyArray = [];
+    // 5. 處理這次新輸入的 Bolus 藥物
     const intraopRows = document.querySelectorAll('#tbody-intraop tr');
     intraopRows.forEach(row => {
         const dName = row.querySelector('.r-drug').value;
@@ -1037,76 +1047,123 @@ function addRecord() {
         const total = row.querySelector('.r-total').value;
         const amt = row.querySelector('.r-amt').value;
         const route = row.querySelector('.r-route').value;
-        
-        if(dName) {
-            bolusNameOnlyArray.push(dName.substring(0, 6)); 
-            
-            // 寫入下方的 Bolus 專屬表格
-            const newTr = document.createElement('tr');
-            newTr.innerHTML = `
-                <td>${dName}</td>
-                <td>${bTime}</td>
-                <td>${dose} ${unit}</td>
-                <td>${total}</td>
-                <td>${amt} ml</td>
-                <td>${route}</td>
-            `;
-            document.getElementById(`bolus-tbody-${targetPage}`).appendChild(newTr);
+
+        if (dName) {
+            boluses.push({ dName, bTime, doseUnit: `${dose} ${unit}`, total, amt: `${amt} ml`, route });
+
+            // 同步寫入上方表格的 Bolus 名稱陣列以供圖表顯示
+            let targetBRecord = records.find(r => r.time === bTime);
+            if (!targetBRecord) {
+                targetBRecord = { time: bTime, anes:'-', o2:'-', spo2:'-', etco2:'-', peak:'-', tv:'-', rr:'-', pulse:'-', sysbp:'-', diabp:'-', meanbp:'-', fluids:'-', temp:'-', cri:'-', bolusNames: '' };
+                records.push(targetBRecord);
+            }
+            const shortName = dName.substring(0, 6);
+            if (targetBRecord.bolusNames) {
+                if (!targetBRecord.bolusNames.includes(shortName)) targetBRecord.bolusNames += ', ' + shortName;
+            } else {
+                targetBRecord.bolusNames = shortName;
+            }
         }
     });
 
-    // 圖表更新：直接讀取網格(DOM)上最終顯示的數字來畫圖，確保完美同步
-    let currentChart = charts[targetPage - 1];
-    const parseChartVal = (elId) => {
-        const txt = document.getElementById(elId).textContent;
-        return (txt === '-' || txt === '') ? null : Number(txt);
-    };
+    // 6. 進行時間排序
+    records.sort((a, b) => a.time.localeCompare(b.time));
+    boluses.sort((a, b) => a.bTime.localeCompare(b.bTime));
 
-    currentChart.data.datasets[0].data[localSlot] = mapY(parseChartVal(`row-pulse-${targetGlobalSlot}`));
-    currentChart.data.datasets[1].data[localSlot] = mapY(parseChartVal(`row-sysbp-${targetGlobalSlot}`));
-    currentChart.data.datasets[2].data[localSlot] = mapY(parseChartVal(`row-diabp-${targetGlobalSlot}`));
-    currentChart.data.datasets[3].data[localSlot] = mapY(parseChartVal(`row-meanbp-${targetGlobalSlot}`));
-    currentChart.data.datasets[4].data[localSlot] = mapY(parseChartVal(`row-spo2-${targetGlobalSlot}`));
-    currentChart.data.datasets[5].data[localSlot] = mapY(parseChartVal(`row-etco2-${targetGlobalSlot}`));
-    currentChart.data.datasets[6].data[localSlot] = mapY(parseChartVal(`row-rr-${targetGlobalSlot}`));
-    currentChart.data.datasets[7].data[localSlot] = mapY(parseChartVal(`row-temp-${targetGlobalSlot}`));
-    
-    if (bolusNameOnlyArray.length > 0) {
-        currentChart.data.datasets[8].data[localSlot] = mapY(280); 
-        if (isOverwrite && currentChart.data.bolusNames[localSlot]) {
-             currentChart.data.bolusNames[localSlot] += ', ' + bolusNameOnlyArray.join(', ');
-        } else {
-             currentChart.data.bolusNames[localSlot] = bolusNameOnlyArray.join(', ');
+    // 7. 將排序完畢的資料重新填回 DOM 與圖表
+    currentGlobalSlot = records.length;
+    while (Math.floor((currentGlobalSlot - 1) / SLOTS_PER_PAGE) + 1 > maxVisiblePage && maxVisiblePage < TOTAL_PAGES) {
+        addNewPage(false);
+    }
+
+    // 先全面清空至當前筆數的表格與圖表節點
+    for (let i = 0; i < TOTAL_PAGES * SLOTS_PER_PAGE; i++) {
+        document.getElementById(`row-time-${i}`).textContent = '';
+        document.getElementById(`row-time-bottom-${i}`).textContent = '';
+        ['anes', 'o2', 'spo2', 'etco2', 'peak', 'tv', 'rr', 'pulse', 'sysbp', 'diabp', 'meanbp', 'fluids', 'temp', 'cri'].forEach(key => {
+            document.getElementById(`row-${key}-${i}`).textContent = '';
+        });
+        let p = Math.floor(i / SLOTS_PER_PAGE) + 1;
+        let lSlot = i % SLOTS_PER_PAGE;
+        if (charts[p-1]) {
+            charts[p-1].data.datasets.forEach(ds => ds.data[lSlot] = null);
+            charts[p-1].data.bolusNames[lSlot] = '';
         }
     }
-    
-    currentChart.update();
-    
-    autoFitText(`row-cri-${targetGlobalSlot}`);
 
-    // 如果不是覆寫模式，全域格數加1
-    if (!isOverwrite) {
-        currentGlobalSlot++;
+    // 依序寫入新資料
+    records.forEach((r, i) => {
+        let targetPage = Math.floor(i / SLOTS_PER_PAGE) + 1;
+        let localSlot = i % SLOTS_PER_PAGE;
+
+        document.getElementById(`row-time-${i}`).textContent = r.time;
+        document.getElementById(`row-time-bottom-${i}`).textContent = r.time;
+        ['anes', 'o2', 'spo2', 'etco2', 'peak', 'tv', 'rr', 'pulse', 'sysbp', 'diabp', 'meanbp', 'fluids', 'temp', 'cri'].forEach(key => {
+            document.getElementById(`row-${key}-${i}`).textContent = r[key];
+        });
+
+        const parseNum = (val) => (val === '-' || val === '') ? null : Number(val);
+        let currentChart = charts[targetPage - 1];
+        currentChart.data.datasets[0].data[localSlot] = mapY(parseNum(r.pulse));
+        currentChart.data.datasets[1].data[localSlot] = mapY(parseNum(r.sysbp));
+        currentChart.data.datasets[2].data[localSlot] = mapY(parseNum(r.diabp));
+        currentChart.data.datasets[3].data[localSlot] = mapY(parseNum(r.meanbp));
+        currentChart.data.datasets[4].data[localSlot] = mapY(parseNum(r.spo2));
+        currentChart.data.datasets[5].data[localSlot] = mapY(parseNum(r.etco2));
+        currentChart.data.datasets[6].data[localSlot] = mapY(parseNum(r.rr));
+        currentChart.data.datasets[7].data[localSlot] = mapY(parseNum(r.temp));
+
+        if (r.bolusNames) {
+            currentChart.data.datasets[8].data[localSlot] = mapY(280);
+            currentChart.data.bolusNames[localSlot] = r.bolusNames;
+        }
+        autoFitText(`row-cri-${i}`);
+    });
+
+    // 觸發圖表更新
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        if (charts[p-1]) charts[p-1].update();
     }
 
-    document.getElementById('tbody-intraop').innerHTML = '';
+    // 將下方 Bolus 表格清空後依時間重建，並正確分派到對應的分頁中
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        const tbody = document.getElementById(`bolus-tbody-${p}`);
+        if (tbody) tbody.innerHTML = '';
+    }
+    boluses.forEach((b) => {
+        let recordIndex = records.findIndex(r => r.time === b.bTime);
+        let targetPage = 1;
+        if (recordIndex !== -1) {
+            targetPage = Math.floor(recordIndex / SLOTS_PER_PAGE) + 1;
+        }
+        const tbody = document.getElementById(`bolus-tbody-${targetPage}`);
+        if (tbody) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${b.dName}</td>
+                <td>${b.bTime}</td>
+                <td>${b.doseUnit}</td>
+                <td>${b.total}</td>
+                <td>${b.amt}</td>
+                <td>${b.route}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+    });
 
+    // 清理輸入框並將視角轉跳至剛剛操作的頁面
+    let addedTimeIndex = records.findIndex(r => r.time === timeStr);
+    let activePage = Math.floor(addedTimeIndex / SLOTS_PER_PAGE) + 1;
+    switchPage(activePage);
+
+    document.getElementById('tbody-intraop').innerHTML = '';
     timeInputEdited = false;
     const realNow = new Date();
     document.getElementById('record-time').value = String(realNow.getHours()).padStart(2, '0') + ':' + String(realNow.getMinutes()).padStart(2, '0');
-
-    // 每次填入後，自動清空第一列的生理數值
-    document.getElementById('anes').value = '';
-    document.getElementById('o2').value = '';
-    document.getElementById('spo2').value = '';
-    document.getElementById('etco2').value = '';
-    document.getElementById('peak').value = '';
-    document.getElementById('tv').value = '';
-    document.getElementById('rr').value = '';
-    document.getElementById('pulse').value = '';
-    document.getElementById('sysBP').value = '';
-    document.getElementById('diaBP').value = '';
-    document.getElementById('meanBP').value = '';
+    
+    ['anes', 'o2', 'spo2', 'etco2', 'peak', 'tv', 'rr', 'pulse', 'sysBP', 'diaBP', 'meanBP'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
 }
 
 // 給藥輸入紀錄邏輯
@@ -1405,7 +1462,9 @@ function loadFromJSON(event) {
                     
                     const idParts = id.split('-');
                     const rowType = idParts[1]; 
-                    const globalSlot = parseInt(idParts[2]);
+                    if (rowType === 'time' || rowType === 'time-bottom') continue;
+                    
+                    const globalSlot = parseInt(idParts[idParts.length - 1]);
                     const targetPage = Math.floor(globalSlot / SLOTS_PER_PAGE) + 1;
                     const localSlot = globalSlot % SLOTS_PER_PAGE;
                     const currentChart = charts[targetPage - 1];
