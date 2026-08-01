@@ -122,6 +122,14 @@
         .bolus-record-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; margin-top: 5px; }
         .bolus-record-table th { border: 1px solid #718096; padding: 4px; background-color: #edf2f7; font-weight: bold; color: #4a5568; }
         .bolus-record-table td { border: 1px solid #718096; padding: 4px; font-weight: bold; color: #2d3748; }
+        .bolus-record-table td[contenteditable="true"] { cursor: text; transition: background-color .15s; }
+        .bolus-record-table td[contenteditable="true"]:hover { background-color: #f0f7f4; }
+        .bolus-record-table td[contenteditable="true"]:focus { background-color: #e2e8f0; outline: 2px solid #2b6cb0; outline-offset: -2px; }
+        .bolus-del-cell { border: none !important; padding: 0 0 0 4px !important; width: 22px; }
+        .btn-bolus-del { background: #fff; border: 1px solid #cbd5e0; color: #a0aec0; border-radius: 3px;
+                         width: 18px; height: 18px; line-height: 1; font-size: 12px; cursor: pointer; padding: 0; }
+        .btn-bolus-del:hover { background: #fed7d7; border-color: #fc8181; color: #c53030; }
+        .btn-bolus-del:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 1px; }
 
         /* 底部輸出按鈕群組 */
         .bottom-export-panel { display: flex; justify-content: center; gap: 30px; margin-top: 30px; }
@@ -137,6 +145,7 @@
         
         /* ================= 完美 PDF 列印樣式 (Print CSS) ================= */
         @media print {
+            .bolus-del-cell, .btn-bolus-del { display: none !important; }
             @page { size: A3 landscape; margin: 10mm; }
             body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             
@@ -1022,7 +1031,9 @@ function addRecord() {
         if (tbody) {
             tbody.querySelectorAll('tr').forEach(tr => {
                 const tds = tr.querySelectorAll('td');
-                if (tds.length === 6) {
+                if (tds.length >= 6) {
+                    const vals = [0,1,2,3,4,5].map(i => tds[i].textContent.trim());
+                    if (vals.every(v => v === '' || v === '-')) return;   // 整列清空 = 刪除
                     boluses.push({
                         dName: tds[0].textContent,
                         bTime: tds[1].textContent,
@@ -1140,12 +1151,13 @@ function addRecord() {
         if (tbody) {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${b.dName}</td>
-                <td>${b.bTime}</td>
-                <td>${b.doseUnit}</td>
-                <td>${b.total}</td>
-                <td>${b.amt}</td>
-                <td>${b.route}</td>
+                <td contenteditable="true">${b.dName}</td>
+                <td contenteditable="true">${b.bTime}</td>
+                <td contenteditable="true">${b.doseUnit}</td>
+                <td contenteditable="true">${b.total}</td>
+                <td contenteditable="true">${b.amt}</td>
+                <td contenteditable="true">${b.route}</td>
+                <td class="bolus-del-cell"><button type="button" class="btn-bolus-del" title="刪除這一列" onclick="deleteBolusRow(this)">\u00d7</button></td>
             `;
             tbody.appendChild(tr);
         }
@@ -1219,6 +1231,14 @@ function addIntraopBolus(selectElem) {
     `;
     tbody.appendChild(tr);
     selectElem.value = ""; 
+}
+
+function deleteBolusRow(btn) {
+    const tr = btn.closest('tr');
+    const name = (tr.querySelector('td') || {}).textContent || '';
+    if (!confirm(`確定刪除這筆給藥紀錄嗎？\n\n${name.trim() || '(未填藥名)'}`)) return;
+    tr.remove();
+    document.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function calcRegular(elem) {
