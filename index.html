@@ -1526,5 +1526,673 @@ function loadFromJSON(event) {
     reader.readAsText(file);
 }
 </script>
+
+<!-- ===== EG-AUTOSAVE-START 自動存檔模組 v3 ===== -->
+<script>
+/* Evergreen 麻醉紀錄表 資料保全模組 v3.0（內嵌版）
+ * 自動草稿 / 離開攔截 / IndexedDB 快照 / 共用磁碟直寫
+ * 移除方式：刪除 EG-AUTOSAVE-START 到 EG-AUTOSAVE-END 之間的全部內容
+ * ========================================================================== */
+
+
+(function () {
+  'use strict';
+
+  /* ==========================================================================
+   * 專屬接線層 v2 — 對應 EverGreen 麻醉紀錄表的實際資料結構
+   * --------------------------------------------------------------------------
+   * 修正原始 saveToJSON/loadFromJSON 的索引錯位問題：
+   * 麻醉計劃的動態藥物列會改變 .ucd-form-container 內的欄位索引，
+   * 因此必須「先還原表格結構、再套用欄位值」，否則值會填到錯誤欄位。
+   * ======================================================================== */
+
+  const PLAN_TBODIES = ['tbody-premed', 'tbody-induction', 'tbody-analgesia', 'tbody-other', 'tbody-cri'];
+  const INTRAOP_FIELDS = ['.r-drug', '.r-time', '.r-dose', '.r-unit', '.r-conc', '.r-total', '.r-amt', '.r-route'];
+
+  function pageReady() {
+    try {
+      return typeof charts !== 'undefined' && Array.isArray(charts) && charts.length > 0
+          && typeof TOTAL_PAGES !== 'undefined'
+          && typeof SLOTS_PER_PAGE !== 'undefined'
+          && typeof addNewPage === 'function'
+          && document.querySelector('.data-cell') !== null;
+    } catch (e) { return false; }
+  }
+
+  function waitForPage(timeoutMs) {
+    return new Promise((res) => {
+      const t0 = Date.now();
+      (function poll() {
+        if (pageReady()) return res(true);
+        if (Date.now() - t0 > timeoutMs) return res(false);
+        setTimeout(poll, 200);
+      })();
+    });
+  }
+
+  function egSerialize() {
+    if (!pageReady()) return null;
+
+    const state = {
+      __v: 2,
+      globalSlot: currentGlobalSlot,
+      maxPage: maxVisiblePage,
+      inputs: {}, cells: {}, bolus: {}, comments: {},
+      plans: {},        // 麻醉計劃各表的列結構
+      intraop: [],      // 術中針劑暫存區（原始存檔完全沒收這張）
+    };
+
+    // 1. 先記下動態表格結構，還原時要先重建才對得回索引
+    PLAN_TBODIES.forEach(id => {
+      const tb = document.getElementById(id);
+      if (tb) state.plans[id] = tb.innerHTML;
+    });
+
+    // 2. 欄位值（依 DOM 索引，與原始格式相容）
+    document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea')
+      .forEach((el, i) => { state.inputs[i] = (el.type === 'checkbox') ? el.checked : el.value; });
+
+    // 3. 術中針劑暫存列：在容器外，不在 inputs 裡，逐格收
+    document.querySelectorAll('#tbody-intraop tr').forEach(tr => {
+      const row = {};
+      INTRAOP_FIELDS.forEach(sel => {
+        const el = tr.querySelector(sel);
+        row[sel] = el ? el.value : '';
+      });
+      state.intraop.push(row);
+    });
+
+    // 4. 網格記錄（contenteditable，不是 input，原始通用掃描抓不到）
+    document.querySelectorAll('.data-cell').forEach(el => {
+      if (el.id && el.textContent) state.cells[el.id] = el.textContent;
+    });
+
+    // 5. 每頁的 Bolus 表、備註、圖表藥名標記
+    for (let i = 1; i <= TOTAL_PAGES; i++) {
+      const tb = document.getElementById(`bolus-tbody-${i}`);
+      if (tb) state.bolus[`bolus-tbody-${i}`] = tb.innerHTML;
+      const c = document.getElementById(`comments-${i}`);
+      if (c) state.comments[`comments-${i}`] = c.value;
+      if (charts[i - 1] && charts[i - 1].data.bolusNames) {
+        state[`chartBolusNames-${i}`] = charts[i - 1].data.bolusNames;
+      }
+    }
+    return state;
+  }
+
+  function egDeserialize(state) {
+    if (!state || !pageReady()) return;
+    const SLOTS = SLOTS_PER_PAGE, PAGES = TOTAL_PAGES;
+
+    // 1. 先補足分頁
+    while (maxVisiblePage < state.maxPage) addNewPage(false);
+    currentGlobalSlot = state.globalSlot;
+
+    // 2. 關鍵修正：先重建麻醉計劃的藥物列，索引才對得回去
+    if (state.plans) {
+      PLAN_TBODIES.forEach(id => {
+        const tb = document.getElementById(id);
+        if (tb && typeof state.plans[id] === 'string') tb.innerHTML = state.plans[id];
+      });
+    }
+
+    // 3. 現在索引已對齊，套用欄位值
+    document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea')
+      .forEach((el, i) => {
+        if (state.inputs[i] === undefined) return;
+        if (el.type === 'checkbox') el.checked = state.inputs[i];
+        else el.value = state.inputs[i];
+      });
+
+    // 4. 術中針劑暫存列：重建列再填值
+    if (Array.isArray(state.intraop) && state.intraop.length) {
+      const tb = document.getElementById('tbody-intraop');
+      const picker = document.querySelector('select[onchange*="addIntraopBolus"]');
+      if (tb && picker && typeof addIntraopBolus === 'function') {
+        tb.innerHTML = '';
+        state.intraop.forEach(row => {
+          picker.value = 'CUSTOM';
+          addIntraopBolus(picker);
+          const tr = tb.lastElementChild;
+          if (!tr) return;
+          INTRAOP_FIELDS.forEach(sel => {
+            const el = tr.querySelector(sel);
+            if (el && row[sel] !== undefined) el.value = row[sel];
+          });
+        });
+        picker.value = '';
+      }
+    }
+
+    // 5. 網格記錄 + 圖表資料點
+    for (const id in state.cells) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.textContent = state.cells[id];
+
+      const parts = id.split('-');
+      const rowType = parts[1];
+      if (rowType === 'time' || rowType === 'time-bottom') continue;
+
+      const gSlot = parseInt(parts[parts.length - 1]);
+      const page = Math.floor(gSlot / SLOTS) + 1;
+      const local = gSlot % SLOTS;
+      const chart = charts[page - 1];
+
+      const val = state.cells[id];
+      const num = (val === '-' || val === '') ? null : Number(val);
+      const dsIndex = { pulse: 0, sysbp: 1, diabp: 2, meanbp: 3, spo2: 4, etco2: 5, rr: 6, temp: 7 }[rowType];
+      if (dsIndex !== undefined && chart) chart.data.datasets[dsIndex].data[local] = mapY(num);
+    }
+
+    // 6. 每頁 Bolus、備註、圖表藥名
+    for (let i = 1; i <= PAGES; i++) {
+      const tbId = `bolus-tbody-${i}`;
+      if (state.bolus[tbId] && document.getElementById(tbId)) {
+        document.getElementById(tbId).innerHTML = state.bolus[tbId];
+      }
+      const cId = `comments-${i}`;
+      if (state.comments[cId]) {
+        const c = document.getElementById(cId);
+        if (c) { c.value = state.comments[cId]; if (typeof autoResize === 'function') autoResize(c); }
+      }
+      if (state[`chartBolusNames-${i}`] && charts[i - 1]) {
+        charts[i - 1].data.bolusNames = state[`chartBolusNames-${i}`];
+        state[`chartBolusNames-${i}`].forEach((name, idx) => {
+          if (name) charts[i - 1].data.datasets[8].data[idx] = mapY(280);
+        });
+      }
+    }
+
+    charts.forEach(c => c.update());
+    if (typeof updateGlobalCalculations === 'function') updateGlobalCalculations();
+
+    let last = Math.floor(currentGlobalSlot / SLOTS) + 1;
+    if (last > PAGES) last = PAGES;
+    if (typeof switchPage === 'function') switchPage(last);
+  }
+
+  function egRecordId() {
+    const el = document.querySelector('.print-id-sync');
+    const v = (el && el.textContent || '').trim();
+    return v || 'NOID';
+  }
+
+  /* ==========================================================================
+   * CONFIG — 你只需要動這一段
+   * ======================================================================== */
+  const CONFIG = {
+    serialize: () => egSerialize(),
+    deserialize: (obj) => egDeserialize(obj),
+    getRecordId: () => egRecordId(),
+
+    debounceMs: 800,          // 停止輸入後多久寫一次草稿
+    heartbeatMs: 30000,       // 保險：每 30 秒也存一次
+    driveSyncMs: 120000,      // 共用磁碟同步間隔（2 分鐘）
+    idbKeepCount: 30,         // IndexedDB 保留幾份歷史快照
+    lsPrefix: 'eg-anes-draft:',
+  };
+
+  /* ==========================================================================
+   * 內部狀態
+   * ======================================================================== */
+  const state = {
+    dirty: false,
+    lastSavedAt: null,
+    storageOK: true,
+    dirHandle: null,
+    driveStatus: 'off',       // off | ready | error
+    debounceTimer: null,
+  };
+
+  const nowStamp = () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  };
+
+  const clockText = () => new Date().toLocaleTimeString('zh-TW', { hour12: false });
+
+  /* ==========================================================================
+   * 資料擷取 / 還原
+   * ======================================================================== */
+  function collect() { return CONFIG.serialize(); }
+  function restore(data) { return CONFIG.deserialize(data); }
+
+  /* ==========================================================================
+   * L1 — localStorage 草稿
+   * ======================================================================== */
+  function probeStorage() {
+    try {
+      localStorage.setItem('__eg_probe', '1');
+      localStorage.removeItem('__eg_probe');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function draftKey() {
+    return CONFIG.lsPrefix + CONFIG.getRecordId();
+  }
+
+  function saveDraft() {
+    const snap = collect();
+    if (!snap) return;                 // 頁面尚未初始化完成，跳過這一次
+    const payload = {
+      savedAt: new Date().toISOString(),
+      recordId: CONFIG.getRecordId(),
+      data: snap,
+    };
+    if (!state.storageOK) { idb.snapshot(payload); return; }
+    try {
+      localStorage.setItem(draftKey(), JSON.stringify(payload));
+      state.lastSavedAt = new Date();
+      ui.tick();
+    } catch (e) {
+      if (e && e.name === 'QuotaExceededError') {
+        pruneOldDrafts();
+        try { localStorage.setItem(draftKey(), JSON.stringify(payload)); } catch (_) {
+          ui.warn('草稿空間已滿，請按「清理舊草稿」或改存共用磁碟。');
+        }
+      }
+    }
+    idb.snapshot(payload);
+  }
+
+  function pruneOldDrafts() {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith(CONFIG.lsPrefix));
+    const scored = keys.map(k => {
+      try { return { k, t: JSON.parse(localStorage.getItem(k)).savedAt }; }
+      catch (_) { return { k, t: '' }; }
+    }).sort((a, b) => a.t.localeCompare(b.t));
+    scored.slice(0, Math.max(0, scored.length - 3)).forEach(o => localStorage.removeItem(o.k));
+  }
+
+  function findDrafts() {
+    if (!state.storageOK) return [];
+    return Object.keys(localStorage)
+      .filter(k => k.startsWith(CONFIG.lsPrefix))
+      .map(k => { try { return { key: k, ...JSON.parse(localStorage.getItem(k)) }; } catch (_) { return null; } })
+      .filter(d => d && d.data && d.data.__v >= 2)
+      .sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+  }
+
+  function markDirty() {
+    state.dirty = true;
+    clearTimeout(state.debounceTimer);
+    state.debounceTimer = setTimeout(saveDraft, CONFIG.debounceMs);
+  }
+
+  /* ==========================================================================
+   * L3 — IndexedDB 快照
+   * ======================================================================== */
+  const idb = {
+    db: null,
+
+    open() {
+      return new Promise((res, rej) => {
+        if (idb.db) return res(idb.db);
+        const req = indexedDB.open('eg-anesthesia', 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('snapshots')) {
+            db.createObjectStore('snapshots', { keyPath: 'id', autoIncrement: true });
+          }
+          if (!db.objectStoreNames.contains('handles')) {
+            db.createObjectStore('handles');
+          }
+        };
+        req.onsuccess = () => { idb.db = req.result; res(idb.db); };
+        req.onerror = () => rej(req.error);
+      });
+    },
+
+    async snapshot(payload) {
+      try {
+        const db = await idb.open();
+        const tx = db.transaction('snapshots', 'readwrite');
+        const store = tx.objectStore('snapshots');
+        store.add(payload);
+        // 修剪：只留最近 N 份
+        const all = store.getAllKeys();
+        all.onsuccess = () => {
+          const keys = all.result;
+          if (keys.length > CONFIG.idbKeepCount) {
+            keys.slice(0, keys.length - CONFIG.idbKeepCount).forEach(k => store.delete(k));
+          }
+        };
+      } catch (_) { /* 快照失敗不影響主流程 */ }
+    },
+
+    async put(storeName, key, val) {
+      const db = await idb.open();
+      return new Promise((res, rej) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put(val, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    },
+
+    async get(storeName, key) {
+      const db = await idb.open();
+      return new Promise((res, rej) => {
+        const req = db.transaction(storeName, 'readonly').objectStore(storeName).get(key);
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+      });
+    },
+  };
+
+  /* ==========================================================================
+   * L4 — 共用磁碟直寫（File System Access API）
+   * ======================================================================== */
+  const drive = {
+    supported: typeof window.showDirectoryPicker === 'function',
+
+    async choose() {
+      if (!drive.supported) {
+        ui.warn('這個瀏覽器不支援直寫共用磁碟，請改用 Chrome 或 Edge。');
+        return false;
+      }
+      try {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        await idb.put('handles', 'driveDir', handle);
+        state.dirHandle = handle;
+        state.driveStatus = 'ready';
+        ui.tick();
+        await drive.write();
+        return true;
+      } catch (e) {
+        return false;   // 使用者取消
+      }
+    },
+
+    // 頁面載入時嘗試接回上次選的資料夾
+    async reconnect() {
+      if (!drive.supported) return;
+      const handle = await idb.get('handles', 'driveDir').catch(() => null);
+      if (!handle) return;
+      const perm = await handle.queryPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        state.dirHandle = handle;
+        state.driveStatus = 'ready';
+      } else {
+        // 需要一次點擊才能重新授權
+        state.dirHandle = handle;
+        state.driveStatus = 'off';
+      }
+      ui.tick();
+    },
+
+    async ensurePermission() {
+      if (!state.dirHandle) return false;
+      let perm = await state.dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') {
+        perm = await state.dirHandle.requestPermission({ mode: 'readwrite' });
+      }
+      const ok = perm === 'granted';
+      state.driveStatus = ok ? 'ready' : 'error';
+      ui.tick();
+      return ok;
+    },
+
+    async writeFile(filename, text) {
+      const fh = await state.dirHandle.getFileHandle(filename, { create: true });
+      const w = await fh.createWritable();
+      await w.write(new Blob([text], { type: 'application/json' }));
+      await w.close();
+    },
+
+    // 進行中：固定檔名覆寫，不會塞爆資料夾
+    async write() {
+      if (!state.dirHandle) return;
+      if (!(await drive.ensurePermission())) return;
+      try {
+        const snap = collect();
+        if (!snap) return;
+        const payload = { savedAt: new Date().toISOString(), recordId: CONFIG.getRecordId(), data: snap };
+        await drive.writeFile(`進行中_${payload.recordId}.json`, JSON.stringify(payload, null, 2));
+        state.driveStatus = 'ready';
+      } catch (e) {
+        state.driveStatus = 'error';
+        ui.warn('寫入共用磁碟失敗：' + (e.message || e));
+      }
+      ui.tick();
+    },
+
+    // 結案：寫一份帶時間戳的定稿
+    async writeFinal() {
+      const id = CONFIG.getRecordId();
+      const snap = collect();
+      const text = JSON.stringify({ finalizedAt: new Date().toISOString(), recordId: id, data: snap }, null, 2);
+      const name = `${nowStamp()}_${id}_麻醉紀錄.json`;
+
+      if (state.dirHandle && await drive.ensurePermission()) {
+        await drive.writeFile(name, text);
+        try {
+          await state.dirHandle.removeEntry(`進行中_${id}.json`);
+        } catch (_) { /* 沒有進行中檔就算了 */ }
+        return true;
+      }
+      // 退路：走瀏覽器下載
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      return false;
+    },
+  };
+
+  /* ==========================================================================
+   * 狀態列 UI — 做成生理監視器讀數的樣子，跟表單本身區隔開
+   * ======================================================================== */
+  const ui = {
+    root: null,
+
+    build() {
+      const bar = document.createElement('div');
+      bar.id = 'eg-save-bar';
+      bar.innerHTML = `
+        <span class="eg-dot"></span>
+        <span class="eg-label">草稿</span>
+        <span class="eg-time" data-role="time">—</span>
+        <span class="eg-sep">/</span>
+        <span class="eg-label">共用磁碟</span>
+        <span class="eg-drive" data-role="drive">未連線</span>
+        <button type="button" data-role="pick">選擇資料夾</button>
+      `;
+      const css = document.createElement('style');
+      css.textContent = `
+        #eg-save-bar{position:fixed;right:12px;bottom:12px;z-index:99999;
+          display:flex;align-items:center;gap:8px;
+          font:500 12px/1 ui-monospace,"SF Mono",Consolas,monospace;
+          letter-spacing:.04em;color:#c8f4dd;background:#0d1a17;
+          border:1px solid #1f3d34;border-radius:3px;padding:8px 10px;
+          box-shadow:0 2px 12px rgba(0,0,0,.35)}
+        #eg-save-bar .eg-label{color:#5e8577;text-transform:uppercase;font-size:10px}
+        #eg-save-bar .eg-sep{color:#1f3d34}
+        #eg-save-bar .eg-dot{width:7px;height:7px;border-radius:50%;
+          background:#2ee6a0;box-shadow:0 0 6px #2ee6a0;transition:background .2s}
+        #eg-save-bar.is-dirty .eg-dot{background:#f5c451;box-shadow:0 0 6px #f5c451}
+        #eg-save-bar.is-error .eg-dot{background:#ff5c5c;box-shadow:0 0 6px #ff5c5c}
+        #eg-save-bar button{font:inherit;color:#c8f4dd;background:#16302a;
+          border:1px solid #24544a;border-radius:2px;padding:4px 8px;cursor:pointer}
+        #eg-save-bar button:hover{background:#1f4239}
+        #eg-save-bar button:focus-visible{outline:2px solid #2ee6a0;outline-offset:2px}
+        #eg-restore{position:fixed;inset:0;z-index:100000;display:flex;
+          align-items:center;justify-content:center;background:rgba(6,14,12,.72)}
+        #eg-restore .box{background:#fff;border-radius:4px;padding:22px 24px;
+          max-width:420px;font:14px/1.6 system-ui,"Noto Sans TC",sans-serif;
+          box-shadow:0 12px 40px rgba(0,0,0,.3)}
+        #eg-restore h3{margin:0 0 8px;font-size:16px}
+        #eg-restore .meta{color:#5e8577;font:12px ui-monospace,monospace;margin-bottom:14px}
+        #eg-restore .row{display:flex;gap:8px;justify-content:flex-end}
+        #eg-restore button{font:13px system-ui;padding:7px 14px;border-radius:3px;cursor:pointer}
+        #eg-restore .primary{background:#16302a;color:#fff;border:1px solid #16302a}
+        #eg-restore .ghost{background:#fff;color:#444;border:1px solid #ccc}
+        @media (prefers-reduced-motion:reduce){#eg-save-bar *{transition:none!important}}
+      `;
+      document.head.appendChild(css);
+      document.body.appendChild(bar);
+      ui.root = bar;
+
+      bar.querySelector('[data-role="pick"]').addEventListener('click', () => {
+        if (state.dirHandle && state.driveStatus !== 'ready') drive.ensurePermission().then(drive.write);
+        else drive.choose();
+      });
+      ui.tick();
+    },
+
+    tick() {
+      if (!ui.root) return;
+      ui.root.querySelector('[data-role="time"]').textContent =
+        state.lastSavedAt ? clockText() : '尚未存檔';
+      const d = ui.root.querySelector('[data-role="drive"]');
+      d.textContent = { off: '未連線', ready: '已連線', error: '寫入失敗' }[state.driveStatus];
+      ui.root.classList.toggle('is-dirty', state.dirty);
+      ui.root.classList.toggle('is-error', state.driveStatus === 'error' || !state.storageOK);
+    },
+
+    warn(msg) { console.warn('[EGSave]', msg); },
+
+    askRestore(draft) {
+      return new Promise((res) => {
+        const wrap = document.createElement('div');
+        wrap.id = 'eg-restore';
+        const when = new Date(draft.savedAt).toLocaleString('zh-TW', { hour12: false });
+        wrap.innerHTML = `
+          <div class="box" role="dialog" aria-modal="true">
+            <h3>偵測到未完成的麻醉紀錄</h3>
+            <div class="meta">病歷號 ${draft.recordId}　最後存檔 ${when}</div>
+            <p style="margin:0 0 16px">要把這份紀錄接回來繼續填嗎？選擇捨棄會清掉這份草稿。</p>
+            <div class="row">
+              <button class="ghost" data-a="drop">捨棄草稿</button>
+              <button class="primary" data-a="restore">接回來繼續填</button>
+            </div>
+          </div>`;
+        document.body.appendChild(wrap);
+        wrap.addEventListener('click', (e) => {
+          const a = e.target.getAttribute && e.target.getAttribute('data-a');
+          if (!a) return;
+          wrap.remove();
+          res(a === 'restore');
+        });
+      });
+    },
+  };
+
+  /* ==========================================================================
+   * 啟動
+   * ======================================================================== */
+  async function init() {
+    state.storageOK = probeStorage();
+    ui.build();
+
+    if (!state.storageOK) {
+      alert('警告：目前的瀏覽器模式無法自動儲存草稿（通常是無痕視窗）。\n請關閉無痕模式後重開，否則資料只在記憶體中。');
+    }
+
+    await drive.reconnect();
+
+    // 等表格真的畫出來再動作，否則格子還不存在，資料會落空
+    const ready = await waitForPage(20000);
+    if (!ready) {
+      state.driveStatus = 'error';
+      ui.tick();
+      ui.warn('頁面初始化逾時，自動存檔未啟動。請重新整理。');
+      alert('自動存檔啟動失敗：麻醉表尚未完成初始化。\n請按 Ctrl+Shift+R 重新整理再試一次。');
+      return;
+    }
+
+    // 還原草稿
+    const drafts = findDrafts();
+    if (drafts.length) {
+      const d = drafts[0];
+      const keep = await ui.askRestore(d);
+      if (keep) {
+        try {
+          restore(d.data);
+          state.lastSavedAt = new Date(d.savedAt);
+        } catch (err) {
+          console.error('[EGSave] 還原失敗', err);
+          alert('草稿還原時發生錯誤，資料已保留在存檔中。\n請按 F12 開啟主控台，把紅字截圖回報。');
+        }
+      }
+      else localStorage.removeItem(d.key);
+      ui.tick();
+    }
+
+    // L1 觸發：capture 模式抓 input / change（含 contenteditable 的網格）
+    document.addEventListener('input', markDirty, true);
+    document.addEventListener('change', markDirty, true);
+
+    // 程式碼新增/刪除藥物列不會發出 input 事件，要靠 MutationObserver
+    const watchIds = ['tbody-premed', 'tbody-induction', 'tbody-analgesia',
+                      'tbody-other', 'tbody-cri', 'tbody-intraop'];
+    const mo = new MutationObserver(markDirty);
+    watchIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) mo.observe(el, { childList: true, subtree: true });
+    });
+    for (let i = 1; i <= (TOTAL_PAGES || 8); i++) {
+      const el = document.getElementById(`bolus-tbody-${i}`);
+      if (el) mo.observe(el, { childList: true, subtree: true });
+    }
+
+    // 保險心跳
+    setInterval(() => { if (state.dirty) saveDraft(); }, CONFIG.heartbeatMs);
+
+    // L4 定時同步
+    setInterval(() => { if (state.dirHandle) drive.write(); }, CONFIG.driveSyncMs);
+
+    // L2 離開攔截
+    window.addEventListener('beforeunload', (e) => {
+      if (!state.dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    // 切到背景時立刻存一次（分頁被系統回收前的最後機會）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveDraft();
+    });
+  }
+
+  /* ==========================================================================
+   * 對外 API
+   * ======================================================================== */
+  window.EGSave = {
+    config: CONFIG,
+    save: saveDraft,
+    async finalize() {
+      saveDraft();
+      const toDrive = await drive.writeFinal();
+      try { localStorage.removeItem(draftKey()); } catch (_) {}
+      state.dirty = false;
+      ui.tick();
+      alert(toDrive
+        ? '定稿已寫入共用磁碟。'
+        : '共用磁碟未連線，定稿已改存到下載資料夾，請手動歸檔。');
+    },
+    pickDriveFolder: () => drive.choose(),
+    listSnapshots: async () => {
+      const db = await idb.open();
+      return new Promise((res) => {
+        const req = db.transaction('snapshots', 'readonly').objectStore('snapshots').getAll();
+        req.onsuccess = () => res(req.result);
+      });
+    },
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+
+</script>
+<!-- ===== EG-AUTOSAVE-END ===== -->
+
 </body>
 </html>
