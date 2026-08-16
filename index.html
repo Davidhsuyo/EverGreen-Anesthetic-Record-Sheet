@@ -2248,9 +2248,25 @@ function loadFromJSON(event) {
   function addPatchStyles() {
     const style = document.createElement('style');
     style.textContent = `
-      .eg-v21-agent-row{display:flex;gap:4px;align-items:center}
-      .eg-v21-agent-row select{width:58px!important;padding-left:2px!important;padding-right:2px!important}
-      .eg-v21-agent-row input{width:58px!important}
+      .eg-v21-agent-row{
+        display:flex;
+        gap:6px;
+        align-items:center;
+        width:132px;
+      }
+      .eg-v21-agent-row select{
+        width:64px!important;
+        min-width:64px!important;
+        padding:6px 2px!important;
+      }
+      .eg-v21-agent-row input{
+        width:62px!important;
+        min-width:62px!important;
+      }
+      .eg-v21-anesthetic-group{
+        width:132px!important;
+        min-width:132px!important;
+      }
       .eg-v21-unmatched{background:#fff5f5!important;outline:2px solid #fc8181;outline-offset:-2px}
       .eg-v21-unmatched td:first-child::after{
         content:"  ⚠ 時間無對應監測紀錄"; color:#c53030; font-size:9px; font-weight:bold
@@ -2334,6 +2350,7 @@ function loadFromJSON(event) {
     agent.appendChild(new Option('ISO', 'ISO'));
     agent.appendChild(new Option('SEVO', 'SEVO'));
 
+    input.parentElement.classList.add('eg-v21-anesthetic-group');
     input.parentNode.insertBefore(row, input);
     row.appendChild(agent);
     row.appendChild(input);
