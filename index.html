@@ -145,6 +145,7 @@
         
         /* ================= 完美 PDF 列印樣式 (Print CSS) ================= */
         @media print {
+            #eg-save-bar, #eg-restore, #eg-version-history, #eg-history-confirm { display: none !important; }
             .bolus-del-cell, .btn-bolus-del { display: none !important; }
             @page { size: A3 landscape; margin: 10mm; }
             body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1797,7 +1798,9 @@ function loadFromJSON(event) {
     debounceMs: 800,          // 停止輸入後多久寫一次草稿
     heartbeatMs: 30000,       // 保險：每 30 秒也存一次
     driveSyncMs: 120000,      // 共用磁碟同步間隔（2 分鐘）
-    idbKeepCount: 30,         // IndexedDB 保留幾份歷史快照
+    idbKeepCount: 30,         // 無痕模式 fallback 快照，每個病例保留幾份
+    versionIntervalMs: 5 * 60 * 1000,  // 版本歷史：最多多久新增一份
+    versionKeepCount: 48,     // 版本歷史：每個病例保留幾份（48 × 5 分 = 4 小時）
     lsPrefix: 'eg-anes-draft:',
   };
 
@@ -1806,11 +1809,14 @@ function loadFromJSON(event) {
    * ======================================================================== */
   const state = {
     dirty: false,
+    everDirty: false,         // 使用者是否曾經動過這份表單（避免空白表單也產生版本歷史）
     lastSavedAt: null,
     storageOK: true,
     dirHandle: null,
     driveStatus: 'off',       // off | ready | error
     debounceTimer: null,
+    lastVersionSignature: null,
+    lastVersionSnapshotAt: 0,
   };
 
   const nowStamp = () => {
@@ -1852,7 +1858,7 @@ function loadFromJSON(event) {
       recordId: CONFIG.getRecordId(),
       data: snap,
     };
-    if (!state.storageOK) { idb.snapshot(payload); return; }
+    if (!state.storageOK) { idb.snapshotFallback(payload); return; }
     try {
       localStorage.setItem(draftKey(), JSON.stringify(payload));
       state.lastSavedAt = new Date();
@@ -1865,7 +1871,9 @@ function loadFromJSON(event) {
         }
       }
     }
-    idb.snapshot(payload);
+    // 注意：這裡不再對每次 saveDraft（800ms debounce / 30s heartbeat）寫入
+    // IndexedDB「版本歷史」。版本歷史改由獨立的 5 分鐘計時器
+    // （maybeCreateVersionSnapshot）處理，避免高頻 autosave 洗掉版本歷史額度。
   }
 
   function pruneOldDrafts() {
@@ -1888,6 +1896,7 @@ function loadFromJSON(event) {
 
   function markDirty() {
     state.dirty = true;
+    state.everDirty = true;
     clearTimeout(state.debounceTimer);
     state.debounceTimer = setTimeout(saveDraft, CONFIG.debounceMs);
   }
@@ -1916,21 +1925,72 @@ function loadFromJSON(event) {
       });
     },
 
-    async snapshot(payload) {
+    // 無痕模式（localStorage 不可用）時的即時草稿 fallback，取代 L1。
+    // 跟版本歷史（kind:'version'）、安全快照（kind:'safety'）分開計數，
+    // 避免高頻寫入洗掉版本歷史額度。
+    async snapshotFallback(payload) {
       try {
-        const db = await idb.open();
+        payload.kind = 'draft-fallback';
+        await idb.addSnapshot(payload, CONFIG.idbKeepCount);
+      } catch (_) { /* 快照失敗不影響主流程 */ }
+    },
+
+    // 寫入一份快照（version / safety / draft-fallback），
+    // 等待 transaction 真的 complete 後才 resolve；
+    // 若帶 keepCount，寫入成功後依 recordId+kind 修剪舊快照。
+    async addSnapshot(payload, keepCount) {
+      const db = await idb.open();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('snapshots', 'readwrite');
+        tx.objectStore('snapshots').add(payload);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('transaction aborted'));
+      });
+      if (keepCount) await idb.pruneKind(payload.recordId, payload.kind, keepCount);
+    },
+
+    // 依 recordId + kind 修剪，只留最近 keepCount 份（不是全庫共用額度）。
+    async pruneKind(recordId, kind, keepCount) {
+      const db = await idb.open();
+      await new Promise((resolve, reject) => {
         const tx = db.transaction('snapshots', 'readwrite');
         const store = tx.objectStore('snapshots');
-        store.add(payload);
-        // 修剪：只留最近 N 份
-        const all = store.getAllKeys();
-        all.onsuccess = () => {
-          const keys = all.result;
-          if (keys.length > CONFIG.idbKeepCount) {
-            keys.slice(0, keys.length - CONFIG.idbKeepCount).forEach(k => store.delete(k));
+        const req = store.getAll();
+        req.onsuccess = () => {
+          const matched = req.result
+            .filter(e => e.recordId === recordId && e.kind === kind)
+            .sort((a, b) => a.id - b.id);
+          if (matched.length > keepCount) {
+            matched.slice(0, matched.length - keepCount).forEach(e => store.delete(e.id));
           }
         };
-      } catch (_) { /* 快照失敗不影響主流程 */ }
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+
+    // 版本紀錄 UI 用：只列目前病例的 version / safety 快照，最新在前。
+    async listByRecord(recordId) {
+      const db = await idb.open();
+      return new Promise((resolve, reject) => {
+        const req = db.transaction('snapshots', 'readonly').objectStore('snapshots').getAll();
+        req.onsuccess = () => {
+          resolve(req.result
+            .filter(e => e.recordId === recordId && (e.kind === 'version' || e.kind === 'safety'))
+            .sort((a, b) => b.id - a.id));
+        };
+        req.onerror = () => reject(req.error);
+      });
+    },
+
+    async getSnapshotById(id) {
+      const db = await idb.open();
+      return new Promise((resolve, reject) => {
+        const req = db.transaction('snapshots', 'readonly').objectStore('snapshots').get(id);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
     },
 
     async put(storeName, key, val) {
@@ -1952,6 +2012,93 @@ function loadFromJSON(event) {
       });
     },
   };
+
+  /* ==========================================================================
+   * L2 — 版本歷史（每 5 分鐘，IndexedDB）／ L3 — 操作前安全快照（IndexedDB）
+   * 兩者都存進同一個 'snapshots' object store，用 kind 區分：
+   *   version — 定時快照，reason:'interval'
+   *   safety  — 高風險操作前快照，reason: before-history-restore / before-json-load / before-finalize
+   * ======================================================================== */
+
+  // 簡單訊號比對，用來判斷「這五分鐘內資料有沒有變」，不需要 crypto library。
+  function lightSignature(obj) {
+    const str = JSON.stringify(obj);
+    let hash = 0;
+    for (let i = 0; i < str.length; i += 7) {
+      hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    }
+    return `${str.length}:${hash}`;
+  }
+
+  function snapshotBasePayload(kind, reason) {
+    const snap = collect();
+    if (!snap) return null;
+    return {
+      kind,
+      savedAt: new Date().toISOString(),
+      recordId: CONFIG.getRecordId(),
+      caseBaseFilename: (typeof getCaseBaseFilename === 'function') ? getCaseBaseFilename() : '',
+      reason,
+      data: snap,
+    };
+  }
+
+  // 每 CONFIG.versionIntervalMs 檢查一次，只有「病例曾被動過」且「內容跟上一份
+  // 版本快照不同」才真的新增一份，避免空白表單或沒有變化時洗版本歷史。
+  async function maybeCreateVersionSnapshot() {
+    if (!state.everDirty) return;
+    const payload = snapshotBasePayload('version', 'interval');
+    if (!payload) return;
+    const sig = lightSignature(payload.data);
+    if (sig === state.lastVersionSignature) return;
+    try {
+      await idb.addSnapshot(payload, CONFIG.versionKeepCount);
+      state.lastVersionSignature = sig;
+      state.lastVersionSnapshotAt = Date.now();
+    } catch (e) {
+      ui.warn('版本歷史寫入失敗：' + (e.message || e));
+    }
+  }
+
+  // 高風險操作前呼叫，必須確認 IndexedDB transaction 真的 complete 才算成功。
+  async function createSafetySnapshot(reason) {
+    const payload = snapshotBasePayload('safety', reason);
+    if (!payload) return false;
+    try {
+      await idb.addSnapshot(payload, CONFIG.versionKeepCount);
+      return true;
+    } catch (e) {
+      ui.warn('安全快照建立失敗：' + (e.message || e));
+      return false;
+    }
+  }
+
+  // 把某份歷史快照（version 或 safety）安全地還原到目前表單：
+  // 1) 先幫「現在」建立一份 safety snapshot（可回頭）
+  // 2) 一定要走正式的 EGSave.config.deserialize()（v2/headerSchema 相容性檢查都在裡面）
+  // 3) 還原成功後同步 L1 localStorage 草稿，讓 F5 也拿到還原後的內容
+  async function restoreFromHistorySnapshot(entry) {
+    const safetyOK = await createSafetySnapshot('before-history-restore');
+    if (!safetyOK) {
+      alert('安全快照建立失敗，為了資料安全，已取消還原。請稍後再試。');
+      return false;
+    }
+    try {
+      EGSave.config.deserialize(entry.data);
+    } catch (err) {
+      console.error('[VersionHistory] 還原失敗', err);
+      const incompatible = String(err?.message || err).includes('EG_HEADER_SCHEMA_INCOMPATIBLE') ||
+        String(err?.message || err).includes('EG_V2_INCOMPATIBLE');
+      alert(incompatible
+        ? '這份版本屬於舊格式，為避免資料錯位，無法直接還原。'
+        : (err?.userMessage || '還原時發生錯誤，資料未套用。'));
+      return false;
+    }
+    state.dirty = true;
+    saveDraft();
+    ui.tick();
+    return true;
+  }
 
   /* ==========================================================================
    * L4 — 共用磁碟直寫（File System Access API）
@@ -2070,6 +2217,7 @@ function loadFromJSON(event) {
         <span class="eg-sep">/</span>
         <span class="eg-label">共用磁碟</span>
         <span class="eg-drive" data-role="drive">未連線</span>
+        <button type="button" data-role="history">版本紀錄</button>
         <button type="button" data-role="pick">選擇資料夾</button>
       `;
       const css = document.createElement('style');
@@ -2101,6 +2249,37 @@ function loadFromJSON(event) {
         #eg-restore button{font:13px system-ui;padding:7px 14px;border-radius:3px;cursor:pointer}
         #eg-restore .primary{background:#16302a;color:#fff;border:1px solid #16302a}
         #eg-restore .ghost{background:#fff;color:#444;border:1px solid #ccc}
+        #eg-version-history{position:fixed;inset:0;z-index:100000;display:flex;
+          align-items:center;justify-content:center;background:rgba(6,14,12,.72)}
+        #eg-version-history .box{background:#fff;border-radius:4px;padding:22px 24px;
+          width:460px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;
+          font:14px/1.6 system-ui,"Noto Sans TC",sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+        #eg-version-history h3{margin:0 0 8px;font-size:16px}
+        #eg-version-history .meta{color:#5e8577;font:12px ui-monospace,monospace;margin-bottom:8px}
+        #eg-version-history .noid-hint{background:#fffaf0;border:1px solid #fbd38d;color:#975a16;
+          font-size:12px;padding:6px 8px;border-radius:3px;margin-bottom:10px}
+        #eg-version-history .list{overflow-y:auto;flex:1;border-top:1px solid #eee;margin-top:4px}
+        #eg-version-history .list-empty{color:#999;font-size:13px;padding:18px 0;text-align:center}
+        #eg-version-history .row-item{display:flex;align-items:center;gap:8px;
+          padding:8px 2px;border-bottom:1px solid #f0f0f0}
+        #eg-version-history .row-item .when{font:13px ui-monospace,monospace;color:#2d3748;white-space:nowrap}
+        #eg-version-history .row-item .reason{flex:1;font-size:12px;color:#718096}
+        #eg-version-history .row-item .reason.is-safety{color:#c53030;font-weight:bold}
+        #eg-version-history .row-item button{font:12px system-ui;padding:5px 10px;
+          border-radius:3px;cursor:pointer;background:#16302a;color:#fff;border:1px solid #16302a}
+        #eg-version-history .footer-row{display:flex;justify-content:flex-end;margin-top:14px}
+        #eg-version-history .footer-row button{font:13px system-ui;padding:7px 14px;
+          border-radius:3px;cursor:pointer;background:#fff;color:#444;border:1px solid #ccc}
+        #eg-history-confirm{position:fixed;inset:0;z-index:100001;display:flex;
+          align-items:center;justify-content:center;background:rgba(6,14,12,.72)}
+        #eg-history-confirm .box{background:#fff;border-radius:4px;padding:22px 24px;
+          max-width:420px;font:14px/1.6 system-ui,"Noto Sans TC",sans-serif;
+          box-shadow:0 12px 40px rgba(0,0,0,.3)}
+        #eg-history-confirm h3{margin:0 0 8px;font-size:16px}
+        #eg-history-confirm .row{display:flex;gap:8px;justify-content:flex-end}
+        #eg-history-confirm button{font:13px system-ui;padding:7px 14px;border-radius:3px;cursor:pointer}
+        #eg-history-confirm .primary{background:#16302a;color:#fff;border:1px solid #16302a}
+        #eg-history-confirm .ghost{background:#fff;color:#444;border:1px solid #ccc}
         @media (prefers-reduced-motion:reduce){#eg-save-bar *{transition:none!important}}
       `;
       document.head.appendChild(css);
@@ -2110,6 +2289,9 @@ function loadFromJSON(event) {
       bar.querySelector('[data-role="pick"]').addEventListener('click', () => {
         if (state.dirHandle && state.driveStatus !== 'ready') drive.ensurePermission().then(drive.write);
         else drive.choose();
+      });
+      bar.querySelector('[data-role="history"]').addEventListener('click', () => {
+        ui.openVersionHistory();
       });
       ui.tick();
     },
@@ -2150,6 +2332,106 @@ function loadFromJSON(event) {
         });
       });
     },
+
+    // 二次確認：「確定要恢復到 xx 版本嗎？」
+    confirmHistoryRestore(whenLabel) {
+      return new Promise((res) => {
+        const wrap = document.createElement('div');
+        wrap.id = 'eg-history-confirm';
+        wrap.innerHTML = `
+          <div class="box" role="dialog" aria-modal="true">
+            <h3>還原版本</h3>
+            <p style="margin:0 0 16px">確定將目前病例恢復到 ${whenLabel} 的版本嗎？\n目前狀態會先自動建立一份安全快照，因此仍可復原。</p>
+            <div class="row">
+              <button class="ghost" data-a="cancel">取消</button>
+              <button class="primary" data-a="restore">還原這個版本</button>
+            </div>
+          </div>`;
+        wrap.querySelector('p').style.whiteSpace = 'pre-line';
+        document.body.appendChild(wrap);
+        wrap.addEventListener('click', (e) => {
+          const a = e.target.getAttribute && e.target.getAttribute('data-a');
+          if (!a) return;
+          wrap.remove();
+          res(a === 'restore');
+        });
+      });
+    },
+
+    reasonLabel(entry) {
+      const map = {
+        interval: '自動快照',
+        'before-history-restore': '還原版本前',
+        'before-json-load': '載入 JSON 前',
+        'before-finalize': '結案前',
+      };
+      return map[entry.reason] || entry.reason || (entry.kind === 'safety' ? '安全快照' : '自動快照');
+    },
+
+    formatSnapshotTime(iso) {
+      const d = new Date(iso);
+      const now = new Date();
+      const hhmmss = d.toLocaleTimeString('zh-TW', { hour12: false });
+      if (d.toDateString() === now.toDateString()) return `今天 ${hhmmss}`;
+      const p = (n) => String(n).padStart(2, '0');
+      return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${hhmmss}`;
+    },
+
+    async openVersionHistory() {
+      const recordId = CONFIG.getRecordId();
+      const wrap = document.createElement('div');
+      wrap.id = 'eg-version-history';
+      wrap.innerHTML = `
+        <div class="box" role="dialog" aria-modal="true">
+          <h3>版本紀錄</h3>
+          <div class="meta">病歷號 ${recordId}</div>
+          ${recordId === 'NOID' ? '<div class="noid-hint">尚未輸入 Animal ID，此時版本紀錄屬於暫存病例。</div>' : ''}
+          <div class="list"><div class="list-empty">載入中…</div></div>
+          <div class="footer-row"><button data-a="close">關閉</button></div>
+        </div>`;
+      document.body.appendChild(wrap);
+
+      const close = () => wrap.remove();
+      wrap.addEventListener('click', (e) => {
+        if (e.target === wrap || e.target.getAttribute('data-a') === 'close') close();
+      });
+
+      let entries = [];
+      try {
+        entries = await idb.listByRecord(recordId);
+      } catch (e) {
+        ui.warn('版本紀錄讀取失敗：' + (e.message || e));
+      }
+
+      const listEl = wrap.querySelector('.list');
+      if (!entries.length) {
+        listEl.innerHTML = '<div class="list-empty">目前這個病例還沒有版本紀錄。</div>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      entries.forEach((entry) => {
+        const row = document.createElement('div');
+        row.className = 'row-item';
+        const isSafety = entry.kind === 'safety';
+        row.innerHTML = `
+          <span class="when">${ui.formatSnapshotTime(entry.savedAt)}</span>
+          <span class="reason${isSafety ? ' is-safety' : ''}">${ui.reasonLabel(entry)}</span>
+          <button type="button">還原</button>
+        `;
+        row.querySelector('button').addEventListener('click', async () => {
+          const whenLabel = ui.formatSnapshotTime(entry.savedAt);
+          const confirmed = await ui.confirmHistoryRestore(whenLabel);
+          if (!confirmed) return;
+          const ok = await restoreFromHistorySnapshot(entry);
+          if (ok) {
+            close();
+            alert(`已還原至 ${whenLabel} 版本`);
+          }
+        });
+        listEl.appendChild(row);
+      });
+    },
   };
 
   /* ==========================================================================
@@ -2186,9 +2468,7 @@ function loadFromJSON(event) {
           state.lastSavedAt = new Date(d.savedAt);
         } catch (err) {
           console.error('[EGSave] 還原失敗', err);
-          if (!String(err?.message || err).includes('EG_HEADER_SCHEMA_INCOMPATIBLE')) {
-            alert('草稿還原時發生錯誤，資料已保留在存檔中。\n請按 F12 開啟主控台，把紅字截圖回報。');
-          }
+          alert(err?.userMessage || '草稿還原時發生錯誤，資料已保留在存檔中。\n請按 F12 開啟主控台，把紅字截圖回報。');
         }
       }
       else localStorage.removeItem(d.key);
@@ -2218,6 +2498,9 @@ function loadFromJSON(event) {
     // L4 定時同步
     setInterval(() => { if (state.dirHandle) drive.write(); }, CONFIG.driveSyncMs);
 
+    // L2 版本歷史：獨立計時器，跟 L1 的 800ms/30s 完全脫鉤
+    setInterval(maybeCreateVersionSnapshot, CONFIG.versionIntervalMs);
+
     // L2 離開攔截
     window.addEventListener('beforeunload', (e) => {
       if (!state.dirty) return;
@@ -2238,6 +2521,7 @@ function loadFromJSON(event) {
     config: CONFIG,
     save: saveDraft,
     async finalize() {
+      await createSafetySnapshot('before-finalize');
       saveDraft();
       const toDrive = await drive.writeFinal();
       try { localStorage.removeItem(draftKey()); } catch (_) {}
@@ -2255,6 +2539,14 @@ function loadFromJSON(event) {
         req.onsuccess = () => res(req.result);
       });
     },
+    // 版本歷史 API（供內部 UI 與外部測試/console 使用）
+    createSafetySnapshot,
+    listVersionHistory: (recordId) => idb.listByRecord(recordId || CONFIG.getRecordId()),
+    restoreFromHistorySnapshot,
+    openVersionHistory: () => ui.openVersionHistory(),
+    // 測試用：手動觸發一次「是否該新增版本快照」的檢查，
+    // 不必真的等 5 分鐘也能驗證去重邏輯是否正確。
+    debugCheckVersionSnapshot: maybeCreateVersionSnapshot,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
@@ -2682,6 +2974,31 @@ function loadFromJSON(event) {
     selectElem.value = '';
     calcCRI(vol);
   };
+
+  // CRI 列是用 addEventListener 動態綁定計算/刪除行為（見上方 addCRIToSectionV21），
+  // 但 egSerialize/egDeserialize 對 tbody-cri 是整批 innerHTML 存/還原，
+  // 還原後這些 addEventListener 全部遺失、只剩靜態 HTML。
+  // 這裡在每次 deserialize 之後重新接上，不動 calcCRI 本身的計算邏輯。
+  // 注意：不能用 dataset 標記「是否已綁定」——dataset 是 DOM attribute，
+  // 會被 innerHTML 序列化進快照，還原出來的新節點會誤帶著舊標記，
+  // 導致這裡誤判「已綁定」而跳過真正的 addEventListener。
+  // 每次呼叫這裡時，tbody-cri 都是剛被 innerHTML 整批換掉的全新節點，
+  // 不會有同一個節點重複綁定的風險，所以不需要防重複判斷。
+  function rebindCRIListeners() {
+    document.querySelectorAll('#tbody-cri tr').forEach((tr) => {
+      const bind = (selector, evt) => {
+        const el = tr.querySelector(selector);
+        if (el) el.addEventListener(evt, () => calcCRI(el));
+      };
+      bind('.c-conc', 'input');
+      bind('.c-vol', 'input');
+      bind('.c-target', 'input');
+      bind('.c-unit', 'change');
+      bind('.c-pump', 'input');
+      const del = tr.querySelector('.btn-del');
+      if (del) del.addEventListener('click', () => tr.remove());
+    });
+  }
 
   window.calcCRI = function calcCRIV21(elem) {
     const row = elem && elem.closest ? elem.closest('tr') : null;
@@ -3177,12 +3494,14 @@ function loadFromJSON(event) {
 
     EGSave.config.deserialize = (state) => {
       if (!state || Number(state.__v || 0) <= 2) {
-        alert(v2Message());
-        throw new Error('EG_V2_INCOMPATIBLE_USE_FROZEN_READER');
+        const err = new Error('EG_V2_INCOMPATIBLE_USE_FROZEN_READER');
+        err.userMessage = v2Message();
+        throw err;
       }
       if (Number(state.headerSchema || 1) < HEADER_SCHEMA_VERSION) {
-        alert(headerSchemaMessage());
-        throw new Error('EG_HEADER_SCHEMA_INCOMPATIBLE');
+        const err = new Error('EG_HEADER_SCHEMA_INCOMPATIBLE');
+        err.userMessage = headerSchemaMessage();
+        throw err;
       }
       originalDeserialize(state);
 
@@ -3195,6 +3514,9 @@ function loadFromJSON(event) {
         });
       }
       if (state.patientFields) applyPatientFields(state.patientFields);
+      // tbody-cri 是整批 innerHTML 還原，動態綁定的 addEventListener 會遺失，
+      // 這裡重新接上，讓還原後的 CRI 列仍可正常重新計算 / 刪除。
+      rebindCRIListeners();
       setTimeout(syncBolusMarkersFromTables, 0);
     };
 
@@ -3220,18 +3542,22 @@ function loadFromJSON(event) {
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
           const state = JSON.parse(reader.result);
           if (Number(state.__v || 0) <= 2) {
             alert(v2Message());
             return;
           }
+          const safetyOK = await EGSave.createSafetySnapshot('before-json-load');
+          if (!safetyOK) {
+            alert('安全快照建立失敗，為了資料安全，已取消讀取。請稍後再試。');
+            return;
+          }
           EGSave.config.deserialize(state);
           alert('病歷資料讀取成功！');
         } catch (err) {
-          const msg = String(err?.message || err);
-          if (msg.includes('EG_V2_INCOMPATIBLE') || msg.includes('EG_HEADER_SCHEMA_INCOMPATIBLE')) return;
+          if (err?.userMessage) { alert(err.userMessage); return; }
           console.error(err);
           alert('檔案格式錯誤或讀取失敗。資料未套入表單。');
         } finally {
