@@ -268,21 +268,46 @@
         <div class="ucd-top-info">
             <div class="header-grid">
                 <div class="info-col">
-                    <div class="info-line"><span>Animal ID #:</span><input type="text" oninput="syncPatientId(this.value)"></div>
-                    <div class="info-line"><span>Species:</span><input type="text"></div>
+                    <div class="info-line"><span>Animal ID #:</span><input type="text" id="patient-id" oninput="syncPatientId(this.value)"></div>
+                    <div class="info-line"><span>Name:</span><input type="text" id="patient-name"></div>
+                    <div class="info-line"><span>Species:</span>
+                        <select id="patient-species" onchange="handleCustomSelect(this,'請輸入 Species：')">
+                            <option value=""></option>
+                            <option value="Canine">Canine</option>
+                            <option value="Feline">Feline</option>
+                            <option value="__CUSTOM__">Other / Custom…</option>
+                        </select>
+                    </div>
                     <div class="info-line"><span>Weight in Kg:</span><input type="number" id="patient-weight" style="width: 60px;" oninput="updateGlobalCalculations()"></div>
                     <div class="info-line"><span>Age:</span><input type="text"></div>
-                    <div class="info-line"><span>Sex:</span><input type="text"></div>
+                    <div class="info-line"><span>Sex:</span>
+                        <select id="patient-sex">
+                            <option value=""></option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                    <div class="info-line"><span>Reproductive Status:</span>
+                        <select id="patient-repro" onchange="handleCustomSelect(this,'請輸入 Reproductive Status：')">
+                            <option value=""></option>
+                            <option value="Intact">Intact</option>
+                            <option value="Neutered">Neutered</option>
+                            <option value="Spayed">Spayed</option>
+                            <option value="Castrated">Castrated</option>
+                            <option value="OHE">OHE</option>
+                            <option value="__CUSTOM__">Other / Custom…</option>
+                        </select>
+                    </div>
                 </div>
-                
+
                 <div class="center-title">
                     <div style="font-size: 20px; font-weight: bold;">Evergreen</div>
                     <div style="font-size: 14px; margin-bottom: 10px;">Evergreen Veterinary Services</div>
                     <div style="font-size: 24px; font-weight: bold; text-decoration: underline;">Anesthesia Record</div>
                 </div>
-                
+
                 <div class="info-col">
-                    <div class="info-line"><span>Date:</span><input type="date"></div>
+                    <div class="info-line"><span>Date:</span><input type="date" id="patient-date"></div>
                     <div class="info-line"><span>Protocol #:</span><input type="text"></div>
                     <div class="info-line"><span>Anesthetist:</span><input type="text"></div>
                     <div class="info-line"><span>Surgeon:</span><input type="text"></div>
@@ -930,6 +955,26 @@ function syncPatientId(val) {
     document.querySelectorAll('.print-id-sync').forEach(el => el.textContent = val);
 }
 
+// ================= 統一病例輸出檔名 =================
+function sanitizeFilenamePart(s) {
+    return String(s == null ? '' : s).replace(/[<>:"/\\|?*]/g, '').trim();
+}
+
+function getLocalISODate(d) {
+    d = d || new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function getCaseBaseFilename() {
+    const id = sanitizeFilenamePart(document.getElementById('patient-id')?.value) || 'NOID';
+    const name = sanitizeFilenamePart(document.getElementById('patient-name')?.value) || 'NONAME';
+    const dateVal = document.getElementById('patient-date')?.value;
+    const dateStr = dateVal ? dateVal.replace(/-/g, '') : getLocalISODate().replace(/-/g, '');
+    return `${id} ${name} ${dateStr}`;
+}
+window.getCaseBaseFilename = getCaseBaseFilename;
+
 // 自動記錄插拔管時間 (對應到當下準備寫入的頁面)
 function addTimeComment(eventLabel, timeVal) {
     if (!timeVal) return;
@@ -1358,10 +1403,13 @@ function forceExpandAll() {
 }
 
 function exportPDFNative() {
-    forceExpandAll(); 
+    forceExpandAll();
     setTimeout(() => {
+        const originalTitle = document.title;
+        document.title = getCaseBaseFilename();
+        window.addEventListener('afterprint', () => { document.title = originalTitle; }, { once: true });
         window.print();
-    }, 300); 
+    }, 300);
 }
 
 function exportCSV() {
@@ -1399,7 +1447,7 @@ function exportCSV() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "Anesthesia_Record.csv");
+    link.setAttribute("download", `${getCaseBaseFilename()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1973,7 +2021,7 @@ function loadFromJSON(event) {
         const snap = collect();
         if (!snap) return;
         const payload = { savedAt: new Date().toISOString(), recordId: CONFIG.getRecordId(), data: snap };
-        await drive.writeFile(`進行中_${payload.recordId}.json`, JSON.stringify(payload, null, 2));
+        await drive.writeFile(`進行中_${getCaseBaseFilename()}.json`, JSON.stringify(payload, null, 2));
         state.driveStatus = 'ready';
       } catch (e) {
         state.driveStatus = 'error';
@@ -1987,7 +2035,7 @@ function loadFromJSON(event) {
       const id = CONFIG.getRecordId();
       const snap = collect();
       const text = JSON.stringify({ finalizedAt: new Date().toISOString(), recordId: id, data: snap }, null, 2);
-      const name = `${nowStamp()}_${id}_麻醉紀錄.json`;
+      const name = `${nowStamp()}_${getCaseBaseFilename()}.json`;
 
       if (state.dirHandle && await drive.ensurePermission()) {
         await drive.writeFile(name, text);
@@ -2325,6 +2373,64 @@ function loadFromJSON(event) {
     });
 
     old.replaceWith(select);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 1b. Patient Header：Name / Species / Sex / Reproductive Status / Date
+  //     Species、Reproductive Status 的「其他/自訂」沿用上面同一套 prompt() 模式。
+  //     額外用穩定 id 存讀，避免日後 header 欄位增減造成的 DOM index 飄移
+  //     影響到這幾個結構化欄位（詳見 patchSerialization 的 patientFields）。
+  // ---------------------------------------------------------------------------
+  function ensureCustomOption(select, value) {
+    if (!value || [...select.options].some(o => o.value === value)) return;
+    const marker = select.querySelector('option[value="__CUSTOM__"]');
+    const opt = new Option(value, value);
+    if (marker) select.insertBefore(opt, marker);
+    else select.appendChild(opt);
+  }
+
+  window.handleCustomSelect = function handleCustomSelectV21(select, promptText) {
+    if (select.value !== '__CUSTOM__') return;
+    const custom = prompt(promptText, '');
+    if (!custom || !custom.trim()) { select.value = ''; return; }
+    const value = custom.trim();
+    ensureCustomOption(select, value);
+    select.value = value;
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  function applySelectValue(select, value) {
+    if (!select) return;
+    if (!value) { select.value = ''; return; }
+    ensureCustomOption(select, value);
+    select.value = value;
+  }
+
+  function collectPatientFields() {
+    return {
+      id: byId('patient-id')?.value ?? '',
+      name: byId('patient-name')?.value ?? '',
+      species: byId('patient-species')?.value ?? '',
+      sex: byId('patient-sex')?.value ?? '',
+      repro: byId('patient-repro')?.value ?? '',
+      date: byId('patient-date')?.value ?? '',
+    };
+  }
+
+  function applyPatientFields(pf) {
+    if (!pf) return;
+    const idEl = byId('patient-id');
+    if (idEl && pf.id !== undefined) { idEl.value = pf.id; if (typeof syncPatientId === 'function') syncPatientId(pf.id); }
+    if (byId('patient-name') && pf.name !== undefined) byId('patient-name').value = pf.name;
+    if (byId('patient-date') && pf.date !== undefined) byId('patient-date').value = pf.date;
+    applySelectValue(byId('patient-species'), pf.species);
+    applySelectValue(byId('patient-sex'), pf.sex);
+    applySelectValue(byId('patient-repro'), pf.repro);
+  }
+
+  function autofillDateIfEmpty() {
+    const el = byId('patient-date');
+    if (el && !el.value && typeof getLocalISODate === 'function') el.value = getLocalISODate();
   }
 
   // ---------------------------------------------------------------------------
@@ -3052,6 +3158,7 @@ function loadFromJSON(event) {
       state.egPatchVersion = PATCH_VERSION;
       state.recordDays = {};
       recordSlots().forEach(s => { state.recordDays[s.index] = s.day; });
+      state.patientFields = collectPatientFields();
       return state;
     };
 
@@ -3070,6 +3177,7 @@ function loadFromJSON(event) {
           if (b) b.dataset.day = String(day);
         });
       }
+      if (state.patientFields) applyPatientFields(state.patientFields);
       setTimeout(syncBolusMarkersFromTables, 0);
     };
 
@@ -3085,9 +3193,7 @@ function loadFromJSON(event) {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
 
-      const idValue = document.querySelector('.print-id-sync')?.textContent?.trim() || 'Unknown';
-      const dateValue = new Date().toISOString().slice(0, 10);
-      a.download = `Anesthesia_${idValue}_${dateValue}_v3.json`;
+      a.download = `${getCaseBaseFilename()}.json`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
@@ -3175,6 +3281,7 @@ function loadFromJSON(event) {
     addPatchStyles();
     replaceClinicianField('Anesthetist:');
     replaceClinicianField('Surgeon:');
+    autofillDateIfEmpty();
     setupAnestheticAgent();
     removeDrugDefaults();
     setupCRIHeader();
