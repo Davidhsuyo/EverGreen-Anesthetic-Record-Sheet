@@ -1,0 +1,2218 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evergreen 麻醉紀錄表</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* 讓最外層容器可以盡量利用螢幕寬度 */
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 10px; background-color: #d1d5db; margin-bottom: 50px; }
+        .app-container { width: 100%; max-width: 1600px; margin: auto; }
+        * { box-sizing: border-box; }
+        
+        /* --- 頂部輸入面板 --- */
+        .input-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: stretch; justify-content: flex-start; }
+        .input-group { display: flex; flex-direction: column; width: 75px; } 
+        .input-group label { font-size: 11px; font-weight: bold; color: #4a5568; margin-bottom: 4px; white-space: nowrap; }
+        .input-group input, .input-group select { padding: 6px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px; text-align: center; }
+        
+        /* 紀錄時間外觀 */
+        .time-group { width: 130px !important; }
+        .time-group input { background-color: #fffaf0; border: 1px solid #f6ad55; font-weight: bold; font-size: 14px; width: 100%; }
+        
+        /* 插拔管時間外觀 (保留不同於主紀錄時間的獨立樣式) */
+        .text-time-group { width: 130px !important; }
+        .text-time-group input { background-color: #edf2f7; border: 1px solid #a0aec0; font-weight: bold; font-size: 13px; color: #4a5568; width: 100%; }
+        
+        .fluid-group { width: 130px !important; }
+        .fluid-inputs { display: flex; gap: 4px; }
+        .fluid-inputs select { width: 60px; padding: 4px; font-size: 11px; }
+        .fluid-inputs input { width: 65px; }
+        
+        .btn-panel { display: flex; gap: 10px; margin-left: auto; width: 100%; justify-content: flex-end; }
+        .btn-add { background-color: #2b6cb0; color: white; border: none; border-radius: 4px; padding: 0 25px; font-weight: bold; cursor: pointer; height: 42px; font-size: 15px; }
+        .btn-add:hover { background-color: #2c5282; }
+        
+        /* --- 分頁與圖表控制面板 --- */
+        .pagination-panel { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; padding: 10px 15px; background: white; border: 3px solid #000; font-weight: bold; }
+        .page-btn { padding: 6px 20px; border: 2px solid #2b6cb0; background: white; color: #2b6cb0; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; transition: all 0.2s; }
+        .page-btn.active { background: #2b6cb0; color: white; }
+        .page-view { display: none; }
+        .page-view.active { display: block; }
+        .page-view.page-hidden { display: none !important; }
+
+        /* 圖表折線控制面板 */
+        .chart-controls-panel { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; padding: 8px 15px; background: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; }
+        .line-toggle-btn { padding: 4px 15px; border: 2px solid #718096; background: white; color: #4a5568; border-radius: 15px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s; }
+        .line-toggle-btn.active { background: #4a5568; color: white; border-color: #4a5568; }
+        
+        .print-only-header { display: none; } 
+
+        /* --- UCD 表單主體 --- */
+        .ucd-form-container { background: white; border: 3px solid #000; box-shadow: 0 10px 20px rgba(0,0,0,0.15); display: flex; flex-direction: column; width: 100%; }
+        
+        .ucd-top-info { padding: 10px 15px; border-bottom: 2px solid #000; }
+        .header-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; margin-bottom: 5px; }
+        .info-col { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: bold; }
+        .info-line { display: flex; align-items: flex-end; }
+        .info-line span { white-space: nowrap; margin-right: 5px; color: #2d3748; }
+        .info-line input, .info-line select { border: none; border-bottom: 1px solid #718096; flex-grow: 1; outline: none; font-size: 14px; font-family: inherit; padding-left: 5px; background: transparent; font-weight: bold; cursor: pointer; }
+        .center-title { text-align: center; display: flex; flex-direction: column; justify-content: center; }
+        
+        .section-divider { background-color: #edf2f7; padding: 4px 8px; font-weight: bold; border-left: 4px solid #4a5568; margin: 10px 0 5px 0; font-size: 13px; color: #1a202c; display: flex; justify-content: space-between; align-items: center; }
+        
+        .history-grid { display: grid; grid-template-columns: 1fr 1fr 2.5fr; gap: 15px; font-size: 12px; font-weight: bold; margin-bottom: 5px; }
+        .pe-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 15px; font-size: 12px; font-weight: bold; }
+        .history-textarea { flex-grow: 1; border: none; border-bottom: 1px solid #718096; background: transparent; outline: none; font-family: inherit; font-size: 13px; font-weight: bold; resize: none; color: #2d3748; padding-left: 5px; line-height: 1.2; }
+        
+        .preop-checklist { margin-top: 10px; background-color: #ebf8ff; border: 1px solid #90cdf4; border-radius: 6px; padding: 6px 15px; display: flex; gap: 20px; font-size: 13px; font-weight: bold; color: #2b6cb0; align-items: center; }
+        .preop-checklist input[type="checkbox"] { transform: scale(1.2); margin-right: 6px; cursor: pointer; }
+        .mm-checkbox-label { display: flex; align-items: center; gap: 2px; font-weight: normal; cursor: pointer; font-size: 11px; }
+        
+        /* ================= 藥物計畫區塊 ================= */
+        .plan-container { padding: 10px 15px; background-color: #f7fafc; border-bottom: 2px solid #000; }
+        .plan-header-global { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 2px solid #cbd5e0; padding-bottom: 5px; }
+        .plan-header-global h3 { margin: 0; font-size: 16px; color: #2d3748; }
+        
+        .plan-block { margin-bottom: 10px; border: 1px solid #cbd5e0; border-radius: 6px; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .plan-block-header { background-color: #2b6cb0; color: white; padding: 6px 15px; border-radius: 6px 6px 0 0; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 13px; }
+        
+        .drug-selector { padding: 2px; border-radius: 4px; border: 1px solid #fff; background-color: #ebf8ff; color: #2b6cb0; font-size: 12px; font-weight: bold; cursor: pointer; outline: none; width: 200px; }
+        
+        .med-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; table-layout: fixed; }
+        .med-table th { border: 1px solid #e2e8f0; padding: 4px; background-color: #edf2f7; font-weight: bold; color: #4a5568; border-top: none; }
+        .med-table td { border: 1px solid #e2e8f0; padding: 2px; position: relative; vertical-align: middle; }
+        .med-table input, .med-table select { width: 100%; border: none; outline: none; text-align: center; font-size: 12px; padding: 2px; background: transparent; font-family: inherit; font-weight: bold; color: #2d3748; }
+        .calc-result { background-color: #f0fff4 !important; font-weight: bold; color: #276749 !important; }
+        .drug-reference { font-size: 9px; color: #2f855a; display: block; text-align: left; padding-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        .btn-toggle-all { background-color: #4a5568; color: white; border: none; border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-weight: bold; }
+        .btn-toggle-block { background: none; border: none; color: white; cursor: pointer; font-size: 16px; font-weight: bold; padding: 0 5px; }
+        .btn-del { color: #e53e3e; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: bold; padding: 2px 5px; }
+        
+        .plan-notes { width: 100%; border: none; border-top: 1px dashed #cbd5e0; background: #f7fafc; outline: none; font-family: inherit; font-size: 12px; padding: 6px 12px; resize: vertical; min-height: 30px; color: #4a5568; border-radius: 0 0 6px 6px; }
+        
+        .cri-result-panel { background-color: #f0fff4; border: 1px solid #9ae6b4; border-radius: 4px; padding: 4px; text-align: left; font-size: 10px; color: #276749; line-height: 1.4; margin: 2px; display: flex; flex-direction: column; justify-content: center; }
+        .cri-note-box { font-size: 11px; color: #4a5568; margin: 6px 15px; font-weight: normal; background-color: #edf2f7; padding: 4px 6px; border-radius: 4px; border-left: 3px solid #2b6cb0; }
+        
+        /* ================= 橫向時間軸與下方滿版圖表區塊 ================= */
+        .horizontal-times-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 15px; background-color: #edf2f7; border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+        .time-event { display: flex; align-items: center; gap: 5px; color: #2d3748; }
+        .time-event input { border: 1px solid #cbd5e0; border-radius: 4px; padding: 2px; font-family: monospace; font-size: 12px; outline: none; }
+        
+        .record-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .record-table th, .record-table td { border: 1px solid #718096; text-align: center; font-size: 11px; height: 18px; box-sizing: border-box; overflow: hidden; padding: 0; }
+        .row-header { width: 75px; max-width: 75px; min-width: 75px; text-align: right; padding-right: 4px; font-weight: bold; background-color: #edf2f7; border-right: 2px solid #000; box-sizing: border-box; }
+        
+        /* 統一資料格：強制全黑、允許換行、自動縮放依賴JS處理 */
+        .data-cell { color: #000 !important; font-weight: bold; white-space: pre-wrap; font-size: 10px; line-height: 1; word-break: break-word; outline: none; transition: background-color 0.2s; }
+        .data-cell:focus { background-color: #e2e8f0; }
+        
+        .chart-wrapper { width: 100%; border-top: 2px solid #000; border-bottom: 2px solid #000; background-color: #fff; position: relative; }
+        canvas { display: block; width: 100%; height: 320px !important; }
+        
+        /* 底部並排面板 (Comments 與 Bolus 表格) */
+        .bottom-split-panel { padding: 10px 15px; background-color: #fff; display: flex; gap: 20px; }
+        .comments-section { flex: 2; display: flex; flex-direction: column; gap: 5px; }
+        .comments-title { font-weight: bold; font-size: 14px; }
+        .comments-box { width: 100%; border: none; border-bottom: 1px solid #718096; font-family: inherit; font-size: 13px; padding: 5px; outline: none; background: transparent; min-height: 80px; flex-grow: 1; resize: none; overflow: hidden; }
+        
+        .bolus-section { flex: 1.2; display: flex; flex-direction: column; gap: 5px; border-left: 2px dashed #cbd5e0; padding-left: 20px; }
+        .bolus-record-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; margin-top: 5px; }
+        .bolus-record-table th { border: 1px solid #718096; padding: 4px; background-color: #edf2f7; font-weight: bold; color: #4a5568; }
+        .bolus-record-table td { border: 1px solid #718096; padding: 4px; font-weight: bold; color: #2d3748; }
+        .bolus-record-table td[contenteditable="true"] { cursor: text; transition: background-color .15s; }
+        .bolus-record-table td[contenteditable="true"]:hover { background-color: #f0f7f4; }
+        .bolus-record-table td[contenteditable="true"]:focus { background-color: #e2e8f0; outline: 2px solid #2b6cb0; outline-offset: -2px; }
+        .bolus-del-cell { border: none !important; padding: 0 0 0 4px !important; width: 22px; }
+        .btn-bolus-del { background: #fff; border: 1px solid #cbd5e0; color: #a0aec0; border-radius: 3px;
+                         width: 18px; height: 18px; line-height: 1; font-size: 12px; cursor: pointer; padding: 0; }
+        .btn-bolus-del:hover { background: #fed7d7; border-color: #fc8181; color: #c53030; }
+        .btn-bolus-del:focus-visible { outline: 2px solid #2b6cb0; outline-offset: 1px; }
+
+        /* 底部輸出按鈕群組 */
+        .bottom-export-panel { display: flex; justify-content: center; gap: 30px; margin-top: 30px; }
+        .btn-export { color: white; border: none; border-radius: 6px; padding: 0 40px; font-weight: bold; cursor: pointer; height: 50px; font-size: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s;}
+        .btn-export-pdf { background-color: #e53e3e; }
+        .btn-export-pdf:hover { background-color: #c53030; transform: translateY(-2px); }
+        .btn-export-csv { background-color: #38a169; }
+        .btn-export-csv:hover { background-color: #276749; transform: translateY(-2px); }
+        .btn-export-json { background-color: #2b6cb0; }
+        .btn-export-json:hover { background-color: #2c5282; transform: translateY(-2px); }
+        .btn-import-json { background-color: #ecc94b; color: #2d3748; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0 40px; }
+        .btn-import-json:hover { background-color: #d69e2e; transform: translateY(-2px); }
+        
+        /* ================= 完美 PDF 列印樣式 (Print CSS) ================= */
+        @media print {
+            .bolus-del-cell, .btn-bolus-del { display: none !important; }
+            @page { size: A3 landscape; margin: 10mm; }
+            body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            
+            .input-panel, .bottom-export-panel, .btn-toggle-all, .btn-toggle-block, .btn-del, .drug-selector, .pagination-panel, .chart-controls-panel { display: none !important; }
+            
+            .app-container { max-width: 100%; }
+            .ucd-form-container { box-shadow: none !important; border: none !important; background: transparent !important; }
+            .ucd-top-info { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
+            .plan-container { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
+            .horizontal-times-bar { border: 2px solid #000; margin-bottom: 15px; break-inside: avoid; }
+            .page-view { display: block !important; border: 2px solid #000; margin-bottom: 15px; padding-bottom: 2px; break-inside: avoid; }
+            .page-view.page-hidden { display: none !important; }
+            
+            .page-view.page-2, .page-view.page-3, .page-view.page-4, .page-view.page-5, 
+            .page-view.page-6, .page-view.page-7, .page-view.page-8 { page-break-before: always; }
+            
+            .print-only-header { display: block !important; font-size: 16px; font-weight: bold; border-bottom: 2px solid #000; margin-bottom: 10px; padding: 5px 10px; background-color: #edf2f7; }
+            
+            .chart-wrapper { height: 320px; }
+            canvas { height: 320px !important; width: 100% !important; }
+            
+            /* 將 Bottom split panel 的邊框移到這，避免頁面多出額外的框 */
+            .bottom-split-panel { break-inside: avoid; border-top: 2px solid #000; margin-top: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+
+    <div class="input-panel">
+        
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="input-group time-group"><label>紀錄時間</label><input type="time" id="record-time"></div>
+            <div class="input-group text-time-group"><label>Intubation</label><input type="time" id="intub-time" onchange="addTimeComment('Intubation', this.value)"></div>
+            <div class="input-group text-time-group"><label>Extubation</label><input type="time" id="extub-time" onchange="addTimeComment('Extubation', this.value)"></div>
+        </div>
+        
+        <div style="width: 2px; background: #cbd5e0; margin: 0 5px; align-self: stretch;"></div>
+        
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; flex: 1; align-items: flex-start; align-content: flex-start;">
+            
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; width: 100%; align-items: flex-end;">
+                <div class="input-group"><label>Anesthetic</label><input type="text" id="anes" placeholder="%"></div>
+                <div class="input-group"><label>O2 L/min</label><input type="text" id="o2" placeholder="L/min"></div>
+                <div class="input-group"><label>SpO2</label><input type="number" id="spo2" placeholder="%"></div>
+                <div class="input-group"><label>ETCO2</label><input type="number" id="etco2" placeholder="mmHg"></div>
+                <div class="input-group"><label>Peak</label><input type="number" id="peak" placeholder="cmH2O"></div>
+                <div class="input-group"><label>TV</label><input type="number" id="tv" placeholder="ml"></div>
+                <div class="input-group"><label>RR</label><input type="number" id="rr" placeholder="bpm"></div>
+                
+                <div style="width: 2px; background: #cbd5e0; margin: 0 5px; height: 35px; align-self: flex-end;"></div>
+                
+                <div class="input-group"><label>Pulse (•)</label><input type="number" id="pulse" placeholder="bpm"></div>
+                <div class="input-group"><label>Sys BP (V)</label><input type="number" id="sysBP" placeholder="mmHg"></div>
+                <div class="input-group"><label>Dia BP (^)</label><input type="number" id="diaBP" placeholder="mmHg"></div>
+                <div class="input-group"><label>Mean BP (x)</label><input type="number" id="meanBP" placeholder="mmHg"></div>
+            </div>
+            
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; width: 100%; align-items: flex-end;">
+                <div class="input-group fluid-group">
+                    <label>Fluids</label>
+                    <div class="fluid-inputs">
+                        <select id="fluid-type">
+                            <option value="LRS">LRS</option>
+                            <option value="0.9% NaCl">0.9% NaCl</option>
+                            <option value="RS">RS</option>
+                            <option value="NS">NS</option>
+                            <option value="Blood">Blood</option>
+                            <option value="Plasma">Plasma</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <input type="number" id="fluids" placeholder="ml">
+                    </div>
+                </div>
+                
+                <div class="input-group"><label>Temp</label><input type="number" id="temp" step="0.1" placeholder="°C"></div>
+                <div class="input-group cri-group" style="width: 120px;"><label>CRI</label><input type="text" id="cri" placeholder="e.g. D3 F2"></div>
+            </div>
+            
+            <div class="plan-block" style="width: 100%; margin-top: 5px; margin-bottom: 0; border-color: #cbd5e0; box-shadow: none;">
+                <div class="plan-block-header" style="background-color: #2b6cb0;">
+                    <span>💉 術中針劑/Bolus藥物</span>
+                    <div>
+                        <select class="drug-selector" onchange="addIntraopBolus(this)" style="font-weight:normal; font-size: 11px;">
+                            <option value="">+ 選擇給藥...</option>
+                            <option value="CUSTOM">自訂藥物 (Custom)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="plan-block-body">
+                    <table class="med-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 20%;">Drug Name</th>
+                                <th style="width: 10%;">Time</th>
+                                <th style="width: 10%;">Dose</th>
+                                <th style="width: 10%;">Unit</th>
+                                <th style="width: 10%;">Conc. (mg/ml)</th>
+                                <th style="width: 10%;">Total (mg)</th>
+                                <th style="width: 10%;">Amount (mls)</th>
+                                <th style="width: 15%;">Route</th>
+                                <th style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-intraop"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+        </div>
+        
+        <div class="btn-panel">
+            <button class="btn-add" onclick="addRecord()">填入下方網格記錄表 ⬇</button>
+        </div>
+    </div>
+
+    <div class="ucd-form-container" id="pdf-content">
+
+        <div class="ucd-top-info">
+            <div class="header-grid">
+                <div class="info-col">
+                    <div class="info-line"><span>Animal ID #:</span><input type="text" oninput="syncPatientId(this.value)"></div>
+                    <div class="info-line"><span>Species:</span><input type="text"></div>
+                    <div class="info-line"><span>Weight in Kg:</span><input type="number" id="patient-weight" style="width: 60px;" oninput="updateGlobalCalculations()"></div>
+                    <div class="info-line"><span>Age:</span><input type="text"></div>
+                    <div class="info-line"><span>Sex:</span><input type="text"></div>
+                </div>
+                
+                <div class="center-title">
+                    <div style="font-size: 20px; font-weight: bold;">Evergreen</div>
+                    <div style="font-size: 14px; margin-bottom: 10px;">Evergreen Veterinary Services</div>
+                    <div style="font-size: 24px; font-weight: bold; text-decoration: underline;">Anesthesia Record</div>
+                </div>
+                
+                <div class="info-col">
+                    <div class="info-line"><span>Date:</span><input type="date"></div>
+                    <div class="info-line"><span>Protocol #:</span><input type="text"></div>
+                    <div class="info-line"><span>Anesthetist:</span><input type="text"></div>
+                    <div class="info-line"><span>Surgeon:</span><input type="text"></div>
+                </div>
+            </div>
+            
+            <div class="section-divider">Patient History & Diagnostics</div>
+            <div class="history-grid">
+                <div class="info-line" style="align-items: flex-start;">
+                    <span style="margin-top: 2px;">Anesthesia History:</span>
+                    <textarea class="history-textarea" rows="2"></textarea>
+                </div>
+                <div class="info-line" style="align-items: flex-start;">
+                    <span style="margin-top: 2px;">Current Medication:</span>
+                    <textarea class="history-textarea" rows="2"></textarea>
+                </div>
+                <div class="info-line" style="align-items: flex-start;">
+                    <div style="display: flex; flex-direction: column; align-items: flex-end; margin-top: 2px; margin-right: 5px;">
+                        <span>Preoperative Evaluation Summary:</span>
+                        <span style="font-size: 9px; font-weight: normal; color: #4a5568;">(CBC/Biochem/Xray/Ultrasound.etc)</span>
+                    </div>
+                    <textarea class="history-textarea" rows="3"></textarea>
+                </div>
+            </div>
+            
+            <div class="section-divider">Physical Examination & Status</div>
+            <div class="pe-grid" style="grid-template-columns: repeat(4, 1fr);">
+                <div class="info-line">
+                    <span>Behavior:</span>
+                    <select><option value=""></option><option value="Gentle/social">Gentle/social</option><option value="Fearful/Possible Caution">Fearful/Possible Caution</option><option value="Aggressive/Feral">Aggressive/Feral</option></select>
+                </div>
+                <div class="info-line">
+                    <span>Mentation:</span>
+                    <select><option value=""></option><option value="Alert">Alert</option><option value="Depressed">Depressed</option><option value="Overexcited">Overexcited</option><option value="Stupor">Stupor</option><option value="Coma">Coma</option></select>
+                </div>
+                <div class="info-line"><span>BCS:</span><input type="text" placeholder="/9"></div>
+                <div class="info-line"><span>Hydration:</span><input type="text"></div>
+                
+                <div class="info-line" style="grid-column: span 2; display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; border-bottom: 1px solid #718096; padding-bottom: 2px;">
+                    <span style="margin-right: 5px;">MM:</span>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Pink">Pink</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Pale">Pale</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Cyanotic">Cyanotic</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Icteric">Icteric</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Red">Red</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Moist">Moist</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Dry">Dry</label>
+                    <label class="mm-checkbox-label"><input type="checkbox" value="Tacky">Tacky</label>
+                </div>
+                <div class="info-line"><span>CRT:</span><input type="text" placeholder="sec"></div>
+                <div class="info-line" style="white-space: nowrap;">
+                    <span>RR:</span><input type="text" placeholder="bpm" style="width: 35px; text-align: center;">
+                    <span style="margin-left: 5px;">Depth:</span>
+                    <select style="width: 70px;"><option value=""></option><option value="Normal">Normal</option><option value="Shallow">Shallow</option><option value="Deep">Deep</option></select>
+                </div>
+                
+                <div class="info-line" style="grid-column: span 2; display: flex; align-items: flex-end;">
+                    <span style="white-space: nowrap;">Pulse Rate:</span>
+                    <input type="text" placeholder="bpm" style="width: 60px; flex-grow: 0; margin-right: 15px; text-align: center; border-bottom: 1px solid #718096; background: transparent; border-top: none; border-left: none; border-right: none;">
+                    
+                    <span style="white-space: nowrap; margin-right: 5px;">BP:</span>
+                    <input type="text" placeholder="mmHg" style="flex-grow: 1; margin-right: 10px; text-align: center; border-bottom: 1px solid #718096; background: transparent; border-top: none; border-left: none; border-right: none;">
+                    
+                    <span style="font-size: 10px; margin-right: 2px;">Size#</span>
+                    <input type="text" style="width: 30px; flex-grow: 0; margin-right: 8px; text-align: center; border-bottom: 1px solid #718096; background: transparent; border-top: none; border-left: none; border-right: none;">
+                    
+                    <span style="font-size: 10px; margin-right: 2px;">Site</span>
+                    <input type="text" style="width: 40px; flex-grow: 0; text-align: center; border-bottom: 1px solid #718096; background: transparent; border-top: none; border-left: none; border-right: none;">
+                </div>
+                
+                <div class="info-line" style="grid-column: span 2;"><span>Cardiac/Pulmonary Ausc:</span><input type="text"></div>
+                
+                <div class="info-line" style="grid-column: span 2;">
+                    <span>ASA Classification:</span>
+                    <select><option value=""></option><option value="I">Class I (Normal, healthy)</option><option value="II">Class II (Mild systemic disease)</option><option value="III">Class III (Severe systemic disease)</option><option value="IV">Class IV (Severe systemic disease, life-threatening)</option><option value="V">Class V (Moribund)</option><option value="E">E (Emergency)</option></select>
+                </div>
+                <div class="info-line" style="grid-column: span 2;">
+                    <span>Procedures:</span><input type="text" style="margin-left: 5px;">
+                </div>
+            </div>
+            
+            <div class="preop-checklist">
+                <div style="color: #2b6cb0;">Pre-Op Checklist :</div>
+                <label><input type="checkbox"> 已點眼藥膏 (Eye Ointment)</label>
+                <label><input type="checkbox"> 已保暖 (Warming Setup)</label>
+                <div style="margin-left: auto; display: flex; align-items: center;">
+                    <span style="margin-right: 5px; color: #4a5568;">Mask/Tube Size #</span>
+                    <input type="text" placeholder="_____" style="width: 50px; border: none; border-bottom: 1px solid #718096; background: transparent; outline: none; font-weight: bold; font-size: 14px; text-align: center; color: #2d3748;">
+                </div>
+            </div>
+        </div>
+
+        <div class="plan-container">
+            <div class="plan-header-global">
+                <h3>三、麻醉計劃 (Anesthesia Plan)</h3>
+                <button class="btn-toggle-all" onclick="toggleAllPlans()">－ 收合麻醉計劃</button>
+            </div>
+            
+            <div id="plan-blocks-wrapper">
+                <div class="plan-block">
+                    <div class="plan-block-header">
+                        <span>Premed (前鎮靜)</span>
+                        <div>
+                            <select class="drug-selector" onchange="addDrugToSection('tbody-premed', this)"></select>
+                            <button class="btn-toggle-block" onclick="toggleBlock(this)">－</button>
+                        </div>
+                    </div>
+                    <div class="plan-block-body">
+                        <table class="med-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 25%;">Drug</th><th style="width: 10%;">Dose</th><th style="width: 10%;">Unit</th><th style="width: 10%;">Conc. (mg/ml)</th>
+                                    <th style="width: 10%;">Total (mg)</th><th style="width: 10%;">Amount (mls)</th><th style="width: 10%;">Route</th><th style="width: 10%;">Time</th><th style="width: 5%;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-premed"></tbody>
+                        </table>
+                        <textarea class="plan-notes" placeholder="額外備註：稀釋方式、給藥順序..."></textarea>
+                    </div>
+                </div>
+
+                <div class="plan-block">
+                    <div class="plan-block-header">
+                        <span>Induction (誘導)</span>
+                        <div>
+                            <select class="drug-selector" onchange="addDrugToSection('tbody-induction', this)"></select>
+                            <button class="btn-toggle-block" onclick="toggleBlock(this)">－</button>
+                        </div>
+                    </div>
+                    <div class="plan-block-body">
+                        <table class="med-table">
+                            <tbody id="tbody-induction"></tbody>
+                        </table>
+                        <textarea class="plan-notes" placeholder="額外備註：co-induction 比例、titrate 方式..."></textarea>
+                    </div>
+                </div>
+
+                <div class="plan-block">
+                    <div class="plan-block-header">
+                        <span>Analgesia (鎮痛)</span>
+                        <div>
+                            <select class="drug-selector" onchange="addDrugToSection('tbody-analgesia', this)"></select>
+                            <button class="btn-toggle-block" onclick="toggleBlock(this)">－</button>
+                        </div>
+                    </div>
+                    <div class="plan-block-body">
+                        <table class="med-table">
+                            <tbody id="tbody-analgesia"></tbody>
+                        </table>
+                        <textarea class="plan-notes" placeholder="額外備註：Block 部位..."></textarea>
+                    </div>
+                </div>
+
+                <div class="plan-block">
+                    <div class="plan-block-header">
+                        <span>Antibiotic & Other (抗生素與其他)</span>
+                        <div>
+                            <select class="drug-selector" onchange="addDrugToSection('tbody-other', this)"></select>
+                            <button class="btn-toggle-block" onclick="toggleBlock(this)">－</button>
+                        </div>
+                    </div>
+                    <div class="plan-block-body">
+                        <table class="med-table">
+                            <tbody id="tbody-other"></tbody>
+                        </table>
+                        <textarea class="plan-notes" placeholder="額外備註：給藥時間點、重複劑量間隔..."></textarea>
+                    </div>
+                </div>
+
+                <div class="plan-block">
+                    <div class="plan-block-header" style="background-color: #2c5282;">
+                        <span>CRI (恆速輸液計算)</span>
+                        <div>
+                            <select class="drug-selector cri-selector" onchange="addCRIToSection(this)"></select>
+                            <button class="btn-toggle-block" onclick="toggleBlock(this)">－</button>
+                        </div>
+                    </div>
+                    <div class="plan-block-body">
+                        <table class="med-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 18%;">藥物 (CRI)</th>
+                                    <th style="width: 8%;">原液濃度<br>(mg/mL)</th>
+                                    <th style="width: 7%;">體重<br>(kg)</th>
+                                    <th style="width: 8%;">袋子體積<br>(mL)</th>
+                                    <th style="width: 8%;">1 mL/hr<br>= N</th>
+                                    <th style="width: 12%;">N 的單位</th>
+                                    <th style="width: 8%;">目標劑量</th>
+                                    <th style="width: 20%;">配製結果</th>
+                                    <th style="width: 8%;">備註</th>
+                                    <th style="width: 3%;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-cri"></tbody>
+                        </table>
+                        <div class="cri-note-box">
+                            💡 <strong>CRI 計算口訣：</strong>「打 1 是 1」= <code>N</code> 填 1，單位選 <code>mcg/kg/hr</code>（或 <code>/min</code>）。若 <code>N=2</code> 表示 1 mL/hr = 2 mcg/kg/hr，依此類推。
+                        </div>
+                        <textarea class="plan-notes" placeholder="額外備註：CRI 配方說明 (MLK/FLK)..."></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="horizontal-times-bar">
+            <div style="font-weight: bold; color: #2c5282; font-size: 14px; margin-right: 10px;">TIMES:</div>
+            <div class="time-event">Start anes: <input type="time"></div>
+            <div class="time-event">Start proc 1: <input type="time"></div>
+            <div class="time-event">Start proc 2: <input type="time"></div>
+            <div class="time-event">End proc: <input type="time"></div>
+            <div class="time-event">End anes: <input type="time"></div>
+            <div class="time-event">Extubated: <input type="time"></div>
+        </div>
+        
+        <div class="pagination-panel">
+            <div style="display: flex; align-items: center; margin-right: 15px; color: #4a5568;">紀錄分頁：</div>
+            <button id="btn-page-1" class="page-btn active" onclick="switchPage(1)">第一頁</button>
+            <button id="btn-page-2" class="page-btn" style="display: none;" onclick="switchPage(2)">第二頁</button>
+            <button id="btn-page-3" class="page-btn" style="display: none;" onclick="switchPage(3)">第三頁</button>
+            <button id="btn-page-4" class="page-btn" style="display: none;" onclick="switchPage(4)">第四頁</button>
+            <button id="btn-page-5" class="page-btn" style="display: none;" onclick="switchPage(5)">第五頁</button>
+            <button id="btn-page-6" class="page-btn" style="display: none;" onclick="switchPage(6)">第六頁</button>
+            <button id="btn-page-7" class="page-btn" style="display: none;" onclick="switchPage(7)">第七頁</button>
+            <button id="btn-page-8" class="page-btn" style="display: none;" onclick="switchPage(8)">第八頁</button>
+            <button id="btn-add-next-page" class="page-btn" style="margin-left: auto; background-color: #38a169; color: white; border-color: #276749;" onclick="addNewPage()">＋ 新增下一頁</button>
+        </div>
+
+        <div class="chart-controls-panel">
+            <span style="font-size: 13px; font-weight: bold; color: #4a5568;">圖表折線顯示：</span>
+            <button class="line-toggle-btn" onclick="toggleLine(0, this)">Pulse</button>
+            <button class="line-toggle-btn" onclick="toggleLine(1, this)">Sys BP</button>
+            <button class="line-toggle-btn" onclick="toggleLine(2, this)">Dia BP</button>
+            <button class="line-toggle-btn" onclick="toggleLine(3, this)">Mean BP</button>
+            <button class="line-toggle-btn" onclick="toggleLine(4, this)">SpO2</button>
+            <button class="line-toggle-btn" onclick="toggleLine(5, this)">ETCO2</button>
+            <button class="line-toggle-btn" onclick="toggleLine(6, this)">RR</button>
+            <button class="line-toggle-btn" onclick="toggleLine(7, this)">Temp</button>
+        </div>
+        
+        <div id="grids-wrapper" style="width: 100%;"></div>
+
+    </div> 
+    
+    <div class="bottom-export-panel">
+        <button id="btnPdf" class="btn-export btn-export-pdf" onclick="exportPDFNative()">📄 列印 / 另存 PDF 病歷</button>
+        <button class="btn-export btn-export-csv" onclick="exportCSV()">📊 匯出 CSV (Numbers) 資料庫</button>
+        <button class="btn-export btn-export-json" onclick="saveToJSON()">💾 儲存專屬存檔 (.json)</button>
+        <label class="btn-export btn-import-json">
+            📂 讀取專屬存檔
+            <input type="file" accept=".json" style="display: none;" onchange="loadFromJSON(event)">
+        </label>
+    </div>
+
+</div>
+
+<script>
+// ================= 自動縮放 Textarea 功能 =================
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+}
+
+// ================= 藥物資料庫 =================
+const drugDB = {
+    "Dexmedetomidine": { conc: 0.5, dose: 5, unit: "mcg/kg", ref: "參考: 1–20 mcg/kg" },
+    "Morphine": { conc: 10, dose: 0.3, unit: "mg/kg", ref: "參考: 0.1–0.5 mg/kg" },
+    "Fentanyl": { conc: 0.05, dose: 3, unit: "mcg/kg", ref: "參考: 2–5 mcg/kg bolus" },
+    "Buprenorphine": { conc: 0.3, dose: 20, unit: "mcg/kg", ref: "參考: 10–40 mcg/kg" },
+    "Butorphanol": { conc: 10, dose: 0.2, unit: "mg/kg", ref: "參考: 0.1–0.4 mg/kg" },
+    "Propofol": { conc: 10, dose: 4, unit: "mg/kg", ref: "參考: 2–6 mg/kg" },
+    "Alfaxalone": { conc: 10, dose: 2, unit: "mg/kg", ref: "參考: 1–3 mg/kg IV" },
+    "Ketamine": { conc: 100, dose: 5, unit: "mg/kg", ref: "參考: 0.5–2 mg/kg IV" },
+    "Midazolam": { conc: 5, dose: 0.2, unit: "mg/kg", ref: "參考: 0.1–0.3 mg/kg" },
+    "Diazepam": { conc: 5, dose: 0.2, unit: "mg/kg", ref: "參考: 0.1–0.5 mg/kg" },
+    "Atropine": { conc: 0.6, dose: 0.02, unit: "mg/kg", ref: "參考: 0.02–0.04 mg/kg" },
+    "Glycopyrrolate": { conc: 0.2, dose: 0.01, unit: "mg/kg", ref: "參考: 0.005–0.01 mg/kg" },
+    "Atipamezole": { conc: 5, dose: 0.1, unit: "mg/kg", ref: "參考: 犬 0.1 mg/kg IM" },
+    "Lidocaine 2%": { conc: 20, dose: 2, unit: "mg/kg", ref: "參考: 犬≤4 mg/kg" },
+    "Bupivacaine 0.5%": { conc: 5, dose: 1, unit: "mg/kg", ref: "參考: 犬≤2 mg/kg" },
+    "Meloxicam": { conc: 5, dose: 0.2, unit: "mg/kg", ref: "參考: 0.2 mg/kg" },
+    "Carprofen": { conc: 50, dose: 4, unit: "mg/kg", ref: "參考: 4 mg/kg" },
+    "Cefazolin": { conc: 100, dose: 22, unit: "mg/kg", ref: "參考: 22 mg/kg IV" },
+    "Fentanyl CRI": { conc: 0.05, n: 1, unit: "mcg/kg/hr", ref: "通常 3–5 mcg/kg/hr" },
+    "Dopamine CRI": { conc: 40, n: 1, unit: "mcg/kg/min", ref: "2–10 mcg/kg/min" },
+    "Dobutamine CRI": { conc: 12.5, n: 1, unit: "mcg/kg/min", ref: "2.5–10 mcg/kg/min" },
+    "Norepinephrine CRI": { conc: 1, n: 1, unit: "mcg/kg/min", ref: "0.05–0.3 mcg/kg/min" },
+    "MLK (Morphine)": { conc: 10, n: 1, unit: "mg/kg/hr", ref: "M:0.1/L:1/K:0.2 mg/kg/hr" }
+};
+
+const regularOptionsHTML = `
+    <option value="">+ 選擇藥物加入...</option>
+    <optgroup label="【前鎮靜】">
+        <option value="Dexmedetomidine">Dexmedetomidine</option>
+        <option value="Acepromazine">Acepromazine</option>
+    </optgroup>
+    <optgroup label="【鎮痛】">
+        <option value="Morphine">Morphine</option>
+        <option value="Fentanyl">Fentanyl</option>
+        <option value="Buprenorphine">Buprenorphine</option>
+        <option value="Butorphanol">Butorphanol</option>
+        <option value="Methadone">Methadone</option>
+    </optgroup>
+    <optgroup label="【誘導】">
+        <option value="Propofol">Propofol</option>
+        <option value="Alfaxalone">Alfaxalone</option>
+    </optgroup>
+    <optgroup label="【誘導 / 止痛】">
+        <option value="Ketamine">Ketamine</option>
+    </optgroup>
+    <optgroup label="【鎮靜】">
+        <option value="Midazolam">Midazolam</option>
+        <option value="Diazepam">Diazepam</option>
+    </optgroup>
+    <optgroup label="【抗膽鹼】">
+        <option value="Atropine">Atropine</option>
+        <option value="Glycopyrrolate">Glycopyrrolate</option>
+    </optgroup>
+    <optgroup label="【NSAIDs】">
+        <option value="Meloxicam">Meloxicam</option>
+        <option value="Carprofen">Carprofen</option>
+    </optgroup>
+    <optgroup label="【抗生素】">
+        <option value="Cefazolin">Cefazolin</option>
+    </optgroup>
+    <optgroup label="【局部麻醉 / 解劑】">
+        <option value="Lidocaine 2%">Lidocaine 2%</option>
+        <option value="Bupivacaine 0.5%">Bupivacaine 0.5%</option>
+        <option value="Atipamezole">Atipamezole</option>
+    </optgroup>
+    <option value="CUSTOM">+ 自訂藥物 (Custom)</option>
+`;
+
+const criOptionsHTML = `
+    <option value="">+ 選擇 CRI 加入...</option>
+    <option value="Fentanyl CRI">Fentanyl CRI</option>
+    <option value="Dopamine CRI">Dopamine CRI</option>
+    <option value="Dobutamine CRI">Dobutamine CRI</option>
+    <option value="Norepinephrine CRI">Norepinephrine CRI</option>
+    <option value="MLK (Morphine)">MLK (Morphine)</option>
+    <option value="CUSTOM">+ 自訂 CRI (Custom)</option>
+`;
+
+// 💡 建立置中的針筒圖示 (Emoji) 讓 Chart.js 使用
+const syringeIcon = new Image();
+syringeIcon.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><text x="12" y="12" font-size="16" text-anchor="middle" dominant-baseline="central">💉</text></svg>';
+
+// ================= Y 軸自適應轉換公式 =================
+function mapY(val) {
+    if (val === null || val === undefined || val === '') return null;
+    let v = Number(val);
+    if (isNaN(v)) return null;
+    if (v <= 50) return v / 5;
+    if (v <= 100) return 10 + (v - 50) / 10;
+    return 15 + (v - 100) / 20;
+}
+
+// ================= 多頁面架構與時間追蹤系統 =================
+const TOTAL_PAGES = 8;
+const SLOTS_PER_PAGE = 30;
+let currentGlobalSlot = 0; 
+let charts = [];
+let timeInputEdited = false;
+let maxVisiblePage = 1;
+
+const topRowDefs = [
+    { id: 'row-time', name: 'Time', bg: '#e2e8f0' },
+    { id: 'row-anes', name: 'Anesthetic' },
+    { id: 'row-o2', name: 'O2 L/min' },
+    { id: 'row-spo2', name: 'SpO2' },
+    { id: 'row-etco2', name: 'ETCO2' },
+    { id: 'row-peak', name: 'Peak' },
+    { id: 'row-tv', name: 'TV' },
+    { id: 'row-rr', name: 'RR' },
+    { id: 'row-pulse', name: 'Pulse' },
+    { id: 'row-sysbp', name: 'Sys BP' },
+    { id: 'row-diabp', name: 'Dia BP' },
+    { id: 'row-meanbp', name: 'Mean BP' }
+];
+
+const bottomRowDefs = [
+    { id: 'row-time-bottom', name: 'Time', bg: '#e2e8f0' },
+    { id: 'row-fluids', name: 'Fluids' },
+    { id: 'row-temp', name: 'Temp (°C)' },
+    { id: 'row-cri', name: 'CRI', height: '25px', cellStyle: 'white-space: normal; padding: 2px;' }
+];
+
+// 新增：處理網格內文字修改並即時連動圖表
+function updateChartFromGrid(el) {
+    const idParts = el.id.split('-');
+    if (idParts.length < 3) return;
+    const rowType = idParts[1]; 
+    if (rowType === 'time' || rowType === 'time-bottom') return;
+    
+    const globalSlot = parseInt(idParts[idParts.length - 1]);
+    const targetPage = Math.floor(globalSlot / SLOTS_PER_PAGE) + 1;
+    const localSlot = globalSlot % SLOTS_PER_PAGE;
+    const currentChart = charts[targetPage - 1];
+    if (!currentChart) return;
+
+    let val = el.textContent.trim();
+    let num = val === '-' || val === '' ? null : Number(val);
+
+    let dsIndex = -1;
+    switch (rowType) {
+        case 'pulse': dsIndex = 0; break;
+        case 'sysbp': dsIndex = 1; break;
+        case 'diabp': dsIndex = 2; break;
+        case 'meanbp': dsIndex = 3; break;
+        case 'spo2': dsIndex = 4; break;
+        case 'etco2': dsIndex = 5; break;
+        case 'rr': dsIndex = 6; break;
+        case 'temp': dsIndex = 7; break;
+    }
+
+    if (dsIndex !== -1) {
+        currentChart.data.datasets[dsIndex].data[localSlot] = mapY(num);
+        currentChart.update();
+    }
+}
+
+function buildMultiPageGrids() {
+    const wrapper = document.getElementById('grids-wrapper');
+    let gridHTML = '';
+
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        gridHTML += `<div class="page-view page-${p} ${p === 1 ? 'active' : ''} ${p > 1 ? 'page-hidden' : ''}">`;
+        if (p > 1) {
+            gridHTML += `<div class="print-only-header">Evergreen Anesthesia Record - Page ${p} &nbsp;&nbsp;|&nbsp;&nbsp; Animal ID: <span class="print-id-sync"></span></div>`;
+        }
+        gridHTML += `<table class="record-table">`;
+        topRowDefs.forEach(r => {
+            gridHTML += `<tr><td class="row-header" style="${r.bg ? 'background-color:'+r.bg+';' : ''}">${r.name}</td>`;
+            for(let i = 0; i < SLOTS_PER_PAGE; i++) {
+                gridHTML += `<td class="data-cell" id="${r.id}-${(p-1) * SLOTS_PER_PAGE + i}" contenteditable="true" oninput="updateChartFromGrid(this)"></td>`;
+            }
+            gridHTML += `</tr>`;
+        });
+        gridHTML += `</table><div class="chart-wrapper"><canvas id="anesthesiaChart-${p}"></canvas></div><table class="record-table">`;
+        bottomRowDefs.forEach(r => {
+            gridHTML += `<tr style="${r.height ? 'height:'+r.height+';' : ''}"><td class="row-header" style="${r.bg ? 'background-color:'+r.bg+';' : ''}">${r.name}</td>`;
+            for(let i = 0; i < SLOTS_PER_PAGE; i++) {
+                gridHTML += `<td class="data-cell" id="${r.id}-${(p-1) * SLOTS_PER_PAGE + i}" style="${r.cellStyle || ''}" contenteditable="true" oninput="updateChartFromGrid(this)"></td>`;
+            }
+            gridHTML += `</tr>`;
+        });
+        gridHTML += `</table>`;
+        
+        // 頁面獨立的 Comments 與 Bolus 區塊
+        gridHTML += `
+        <div class="bottom-split-panel" style="border-top: 2px solid #000; margin-top: -2px;">
+            <div class="comments-section">
+                <div class="comments-title">Comments:</div>
+                <textarea id="comments-${p}" class="comments-box" placeholder="輸入備註或特殊事件紀錄..." oninput="autoResize(this)"></textarea>
+            </div>
+            <div class="bolus-section">
+                <div class="comments-title">術中針劑 / Bolus 藥物</div>
+                <table class="bolus-record-table">
+                    <thead>
+                        <tr>
+                            <th>Drug Name</th>
+                            <th>Time</th>
+                            <th>Dose</th>
+                            <th>Total (mg)</th>
+                            <th>Amount</th>
+                            <th>Route</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bolus-tbody-${p}">
+                        </tbody>
+                </table>
+            </div>
+        </div>`;
+
+        gridHTML += `</div>`;
+    }
+    wrapper.innerHTML = gridHTML;
+}
+
+// 建立 8 個獨立的 Chart 實例 
+function initCharts() {
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        const ctx = document.getElementById(`anesthesiaChart-${p}`).getContext('2d');
+        const emptyData = () => Array(SLOTS_PER_PAGE).fill(null); 
+        
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(SLOTS_PER_PAGE).fill(''),
+                datasets: [
+                    { label: 'Pulse', data: emptyData(), borderColor: 'rgba(255, 99, 132, 1)', backgroundColor: 'rgba(255, 99, 132, 1)', pointStyle: 'circle', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'Sys BP', data: emptyData(), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 1)', pointStyle: 'triangle', pointRadius: 5, rotation: 180, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'Dia BP', data: emptyData(), borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 1)', pointStyle: 'triangle', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'Mean BP', data: emptyData(), borderColor: 'rgba(75, 192, 192, 1)', backgroundColor: 'rgba(75, 192, 192, 1)', pointStyle: 'crossRot', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'SpO2', data: emptyData(), borderColor: '#805ad5', backgroundColor: '#805ad5', pointStyle: 'rect', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'ETCO2', data: emptyData(), borderColor: '#38a169', backgroundColor: '#38a169', pointStyle: 'rectRot', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'RR', data: emptyData(), borderColor: 'red', backgroundColor: 'red', pointStyle: 'star', pointRadius: 5, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    { label: 'Temp', data: emptyData(), borderColor: '#d53f8c', backgroundColor: '#d53f8c', pointStyle: 'cross', pointRadius: 4, fill: false, tension: 0, spanGaps: true, showLine: false, borderDash: [5, 5], borderWidth: 1.5 },
+                    // Bolus Dataset
+                    { 
+                        label: 'Bolus', 
+                        data: emptyData(), 
+                        pointRadius: 0, 
+                        showLine: false,
+                        pointStyle: syringeIcon
+                    }
+                ]
+            },
+            plugins: [{
+                id: 'customDataLabels',
+                afterDatasetsDraw(chart, args, pluginOptions) {
+                    const ctx = chart.ctx;
+                    const meta = chart.getDatasetMeta(8); // 第 9 個 dataset (Bolus)
+                    if (!meta.hidden && chart.data.bolusNames) {
+                        meta.data.forEach((element, index) => {
+                            const name = chart.data.bolusNames[index];
+                            if (name && element.y !== undefined) {
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                
+                                ctx.font = '14px Arial';
+                                ctx.fillText('💉', element.x, element.y);
+                                
+                                ctx.fillStyle = '#c53030';
+                                ctx.font = 'bold 9px Arial';
+                                ctx.fillText(name, element.x, element.y - 14);
+                            }
+                        });
+                    }
+                }
+            }],
+            options: {
+                devicePixelRatio: 4,
+                responsive: true, maintainAspectRatio: false, layout: { padding: { top: 15 } }, 
+                plugins: { 
+                    legend: { 
+                        display: true,
+                        position: 'bottom',
+                        onClick: function(e, legendItem, legend) {}, // 禁用點擊隱藏，以免跟上方按鈕衝突
+                        labels: {
+                            usePointStyle: true,
+                            boxWidth: 8,
+                            padding: 12,
+                            font: { size: 11, weight: 'bold' },
+                            color: '#4a5568'
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if(context.datasetIndex === 8) {
+                                    return 'Bolus: ' + context.chart.data.bolusNames[context.dataIndex];
+                                }
+                                let val = context.raw;
+                                if (val === null) return '';
+                                let realVal = 0;
+                                if (val <= 10) realVal = val * 5;
+                                else if (val <= 15) realVal = 50 + (val - 10) * 10;
+                                else realVal = 100 + (val - 15) * 20;
+                                realVal = Math.round(realVal * 100) / 100;
+                                return context.dataset.label + ': ' + realVal;
+                            }
+                        }
+                    }
+                }, 
+                scales: {
+                    x: { offset: true, grid: { display: true, drawOnChartArea: true, color: '#e2e8f0' }, ticks: { display: false } },
+                    y: { 
+                        min: 0, max: 25, 
+                        ticks: { 
+                            stepSize: 1,
+                            callback: function(value) {
+                                if (value <= 10) return value * 5;
+                                if (value <= 15) return 50 + (value - 10) * 10;
+                                if (value <= 25) return 100 + (value - 15) * 20;
+                                return '';
+                            },
+                            font: { size: 10 }
+                        },
+                        grid: { color: '#e2e8f0' }, afterFit: function(scale) { scale.width = 75; } 
+                    }
+                },
+                animation: false
+            }
+        });
+        
+        chart.data.bolusNames = Array(SLOTS_PER_PAGE).fill(''); 
+        charts.push(chart);
+    }
+}
+
+let lineVisibility = [false, false, false, false, false, false, false, false];
+function toggleLine(dsIndex, btn) {
+    lineVisibility[dsIndex] = !lineVisibility[dsIndex];
+    if(lineVisibility[dsIndex]) btn.classList.add('active'); else btn.classList.remove('active');
+    charts.forEach(chart => { chart.data.datasets[dsIndex].showLine = lineVisibility[dsIndex]; chart.update(); });
+}
+
+window.onload = function() {
+    document.querySelectorAll('.drug-selector:not(.cri-selector)').forEach(sel => sel.innerHTML = regularOptionsHTML);
+    document.querySelectorAll('.cri-selector').forEach(sel => sel.innerHTML = criOptionsHTML);
+    
+    buildMultiPageGrids();
+    initCharts();
+
+    const timeInput = document.getElementById('record-time');
+    const updateToNow = () => {
+        const now = new Date();
+        timeInput.value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    };
+    updateToNow();
+
+    timeInput.addEventListener('input', () => { timeInputEdited = true; });
+
+    setInterval(() => { if (!timeInputEdited) { updateToNow(); } }, 30000);
+};
+
+function addNewPage(autoSwitch = true) {
+    if (maxVisiblePage >= TOTAL_PAGES) {
+        if (autoSwitch) alert('已達到最大頁數限制 (8頁)！');
+        return;
+    }
+    maxVisiblePage++;
+    
+    document.getElementById(`btn-page-${maxVisiblePage}`).style.display = 'inline-block';
+    document.querySelector(`.page-view.page-${maxVisiblePage}`).classList.remove('page-hidden');
+    
+    if (maxVisiblePage >= TOTAL_PAGES) {
+        document.getElementById('btn-add-next-page').style.display = 'none';
+    }
+    
+    if (autoSwitch) {
+        switchPage(maxVisiblePage);
+    }
+}
+
+function switchPage(p) {
+    document.querySelectorAll('.page-btn').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
+    document.getElementById(`btn-page-${p}`).classList.add('active');
+    document.querySelector(`.page-view.page-${p}`).classList.add('active');
+    if (charts[p-1]) { charts[p-1].resize(); charts[p-1].update(); }
+}
+
+function syncPatientId(val) {
+    document.querySelectorAll('.print-id-sync').forEach(el => el.textContent = val);
+}
+
+// 自動記錄插拔管時間 (對應到當下準備寫入的頁面)
+function addTimeComment(eventLabel, timeVal) {
+    if (!timeVal) return;
+    
+    let targetPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
+    if (targetPage > TOTAL_PAGES) targetPage = TOTAL_PAGES;
+
+    const commentBox = document.getElementById(`comments-${targetPage}`);
+    const newComment = `[${timeVal}] ${eventLabel}`;
+    
+    if (commentBox.value) {
+        commentBox.value += '\n' + newComment;
+    } else {
+        commentBox.value = newComment;
+    }
+    autoResize(commentBox); // 更新高度
+}
+
+function autoFitText(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    let fontSize = 10;
+    el.style.fontSize = fontSize + 'px';
+    while (el.scrollHeight > el.clientHeight && fontSize > 6) {
+        fontSize -= 0.5;
+        el.style.fontSize = fontSize + 'px';
+    }
+}
+
+function addRecord() {
+    if (currentGlobalSlot >= TOTAL_PAGES * SLOTS_PER_PAGE) { alert('表單已完全滿載 (240格)！'); return; }
+
+    const timeStr = document.getElementById('record-time').value;
+    if(!timeStr) { alert('請輸入紀錄時間！'); return; }
+
+    // 1. 提取所有現存網格紀錄
+    let records = [];
+    for (let i = 0; i < currentGlobalSlot; i++) {
+        let t = document.getElementById(`row-time-${i}`).textContent;
+        if (!t || t === '-') continue;
+        let targetPage = Math.floor(i / SLOTS_PER_PAGE) + 1;
+        let localSlot = i % SLOTS_PER_PAGE;
+        records.push({
+            time: t,
+            anes: document.getElementById(`row-anes-${i}`).textContent,
+            o2: document.getElementById(`row-o2-${i}`).textContent,
+            spo2: document.getElementById(`row-spo2-${i}`).textContent,
+            etco2: document.getElementById(`row-etco2-${i}`).textContent,
+            peak: document.getElementById(`row-peak-${i}`).textContent,
+            tv: document.getElementById(`row-tv-${i}`).textContent,
+            rr: document.getElementById(`row-rr-${i}`).textContent,
+            pulse: document.getElementById(`row-pulse-${i}`).textContent,
+            sysbp: document.getElementById(`row-sysbp-${i}`).textContent,
+            diabp: document.getElementById(`row-diabp-${i}`).textContent,
+            meanbp: document.getElementById(`row-meanbp-${i}`).textContent,
+            fluids: document.getElementById(`row-fluids-${i}`).textContent,
+            temp: document.getElementById(`row-temp-${i}`).textContent,
+            cri: document.getElementById(`row-cri-${i}`).textContent,
+            bolusNames: charts[targetPage - 1].data.bolusNames[localSlot] || ''
+        });
+    }
+
+    // 2. 尋找或建立當前時間的紀錄物件
+    let record = records.find(r => r.time === timeStr);
+    let isOverwrite = !!record;
+    if (!record) {
+        record = { time: timeStr, anes:'-', o2:'-', spo2:'-', etco2:'-', peak:'-', tv:'-', rr:'-', pulse:'-', sysbp:'-', diabp:'-', meanbp:'-', fluids:'-', temp:'-', cri:'-', bolusNames: '' };
+        records.push(record);
+    }
+
+    // 3. 更新各項生理數值
+    const updateVal = (key, inputId) => {
+        const val = document.getElementById(inputId).value;
+        if (!isOverwrite) {
+            record[key] = val !== '' ? val : '-';
+        } else if (val !== '') {
+            record[key] = val;
+        }
+    };
+
+    updateVal('anes', 'anes'); updateVal('o2', 'o2'); updateVal('spo2', 'spo2');
+    updateVal('etco2', 'etco2'); updateVal('peak', 'peak'); updateVal('tv', 'tv');
+    updateVal('rr', 'rr'); updateVal('pulse', 'pulse'); updateVal('sysbp', 'sysBP');
+    updateVal('diabp', 'diaBP'); updateVal('meanbp', 'meanBP'); updateVal('temp', 'temp');
+
+    const fluidType = document.getElementById('fluid-type').value;
+    const fluidAmt = document.getElementById('fluids').value;
+    if (!isOverwrite) { record.fluids = fluidAmt !== '' ? `${fluidType} ${fluidAmt}` : '-'; }
+    else if (fluidAmt !== '') { record.fluids = `${fluidType} ${fluidAmt}`; }
+
+    const criElem = document.getElementById('cri');
+    if (!isOverwrite) { record.cri = (criElem && criElem.value) ? criElem.value : '-'; }
+    else if (criElem && criElem.value !== '') { record.cri = criElem.value; }
+
+    // 4. 提取下方的所有歷史 Bolus 紀錄
+    let boluses = [];
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        const tbody = document.getElementById(`bolus-tbody-${p}`);
+        if (tbody) {
+            tbody.querySelectorAll('tr').forEach(tr => {
+                const tds = tr.querySelectorAll('td');
+                if (tds.length >= 6) {
+                    const vals = [0,1,2,3,4,5].map(i => tds[i].textContent.trim());
+                    if (vals.every(v => v === '' || v === '-')) return;   // 整列清空 = 刪除
+                    boluses.push({
+                        dName: tds[0].textContent,
+                        bTime: tds[1].textContent,
+                        doseUnit: tds[2].textContent,
+                        total: tds[3].textContent,
+                        amt: tds[4].textContent,
+                        route: tds[5].textContent
+                    });
+                }
+            });
+        }
+    }
+
+    // 5. 處理這次新輸入的 Bolus 藥物
+    const intraopRows = document.querySelectorAll('#tbody-intraop tr');
+    intraopRows.forEach(row => {
+        const dName = row.querySelector('.r-drug').value;
+        let bTime = row.querySelector('.r-time').value;
+        if (!bTime) bTime = timeStr; // 未輸入時間則自動帶入當前主紀錄時間
+        const dose = row.querySelector('.r-dose').value;
+        const unit = row.querySelector('.r-unit').value;
+        const total = row.querySelector('.r-total').value;
+        const amt = row.querySelector('.r-amt').value;
+        const route = row.querySelector('.r-route').value;
+
+        if (dName) {
+            boluses.push({ dName, bTime, doseUnit: `${dose} ${unit}`, total, amt: `${amt} ml`, route });
+
+            // 同步寫入上方表格的 Bolus 名稱陣列以供圖表顯示
+            let targetBRecord = records.find(r => r.time === bTime);
+            if (!targetBRecord) {
+                targetBRecord = { time: bTime, anes:'-', o2:'-', spo2:'-', etco2:'-', peak:'-', tv:'-', rr:'-', pulse:'-', sysbp:'-', diabp:'-', meanbp:'-', fluids:'-', temp:'-', cri:'-', bolusNames: '' };
+                records.push(targetBRecord);
+            }
+            const shortName = dName.substring(0, 6);
+            if (targetBRecord.bolusNames) {
+                if (!targetBRecord.bolusNames.includes(shortName)) targetBRecord.bolusNames += ', ' + shortName;
+            } else {
+                targetBRecord.bolusNames = shortName;
+            }
+        }
+    });
+
+    // 6. 進行時間排序
+    records.sort((a, b) => a.time.localeCompare(b.time));
+    boluses.sort((a, b) => a.bTime.localeCompare(b.bTime));
+
+    // 7. 將排序完畢的資料重新填回 DOM 與圖表
+    currentGlobalSlot = records.length;
+    while (Math.floor((currentGlobalSlot - 1) / SLOTS_PER_PAGE) + 1 > maxVisiblePage && maxVisiblePage < TOTAL_PAGES) {
+        addNewPage(false);
+    }
+
+    // 先全面清空至當前筆數的表格與圖表節點
+    for (let i = 0; i < TOTAL_PAGES * SLOTS_PER_PAGE; i++) {
+        document.getElementById(`row-time-${i}`).textContent = '';
+        document.getElementById(`row-time-bottom-${i}`).textContent = '';
+        ['anes', 'o2', 'spo2', 'etco2', 'peak', 'tv', 'rr', 'pulse', 'sysbp', 'diabp', 'meanbp', 'fluids', 'temp', 'cri'].forEach(key => {
+            document.getElementById(`row-${key}-${i}`).textContent = '';
+        });
+        let p = Math.floor(i / SLOTS_PER_PAGE) + 1;
+        let lSlot = i % SLOTS_PER_PAGE;
+        if (charts[p-1]) {
+            charts[p-1].data.datasets.forEach(ds => ds.data[lSlot] = null);
+            charts[p-1].data.bolusNames[lSlot] = '';
+        }
+    }
+
+    // 依序寫入新資料
+    records.forEach((r, i) => {
+        let targetPage = Math.floor(i / SLOTS_PER_PAGE) + 1;
+        let localSlot = i % SLOTS_PER_PAGE;
+
+        document.getElementById(`row-time-${i}`).textContent = r.time;
+        document.getElementById(`row-time-bottom-${i}`).textContent = r.time;
+        ['anes', 'o2', 'spo2', 'etco2', 'peak', 'tv', 'rr', 'pulse', 'sysbp', 'diabp', 'meanbp', 'fluids', 'temp', 'cri'].forEach(key => {
+            document.getElementById(`row-${key}-${i}`).textContent = r[key];
+        });
+
+        const parseNum = (val) => (val === '-' || val === '') ? null : Number(val);
+        let currentChart = charts[targetPage - 1];
+        currentChart.data.datasets[0].data[localSlot] = mapY(parseNum(r.pulse));
+        currentChart.data.datasets[1].data[localSlot] = mapY(parseNum(r.sysbp));
+        currentChart.data.datasets[2].data[localSlot] = mapY(parseNum(r.diabp));
+        currentChart.data.datasets[3].data[localSlot] = mapY(parseNum(r.meanbp));
+        currentChart.data.datasets[4].data[localSlot] = mapY(parseNum(r.spo2));
+        currentChart.data.datasets[5].data[localSlot] = mapY(parseNum(r.etco2));
+        currentChart.data.datasets[6].data[localSlot] = mapY(parseNum(r.rr));
+        currentChart.data.datasets[7].data[localSlot] = mapY(parseNum(r.temp));
+
+        if (r.bolusNames) {
+            currentChart.data.datasets[8].data[localSlot] = mapY(280);
+            currentChart.data.bolusNames[localSlot] = r.bolusNames;
+        }
+        autoFitText(`row-cri-${i}`);
+    });
+
+    // 觸發圖表更新
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        if (charts[p-1]) charts[p-1].update();
+    }
+
+    // 將下方 Bolus 表格清空後依時間重建，並正確分派到對應的分頁中
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+        const tbody = document.getElementById(`bolus-tbody-${p}`);
+        if (tbody) tbody.innerHTML = '';
+    }
+    boluses.forEach((b) => {
+        let recordIndex = records.findIndex(r => r.time === b.bTime);
+        let targetPage = 1;
+        if (recordIndex !== -1) {
+            targetPage = Math.floor(recordIndex / SLOTS_PER_PAGE) + 1;
+        }
+        const tbody = document.getElementById(`bolus-tbody-${targetPage}`);
+        if (tbody) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td contenteditable="true">${b.dName}</td>
+                <td contenteditable="true">${b.bTime}</td>
+                <td contenteditable="true">${b.doseUnit}</td>
+                <td contenteditable="true">${b.total}</td>
+                <td contenteditable="true">${b.amt}</td>
+                <td contenteditable="true">${b.route}</td>
+                <td class="bolus-del-cell"><button type="button" class="btn-bolus-del" title="刪除這一列" onclick="deleteBolusRow(this)">\u00d7</button></td>
+            `;
+            tbody.appendChild(tr);
+        }
+    });
+
+    // 清理輸入框並將視角轉跳至剛剛操作的頁面
+    let addedTimeIndex = records.findIndex(r => r.time === timeStr);
+    let activePage = Math.floor(addedTimeIndex / SLOTS_PER_PAGE) + 1;
+    switchPage(activePage);
+
+    document.getElementById('tbody-intraop').innerHTML = '';
+    timeInputEdited = false;
+    const realNow = new Date();
+    document.getElementById('record-time').value = String(realNow.getHours()).padStart(2, '0') + ':' + String(realNow.getMinutes()).padStart(2, '0');
+    
+    ['anes', 'o2', 'spo2', 'etco2', 'peak', 'tv', 'rr', 'pulse', 'sysBP', 'diaBP', 'meanBP'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+}
+
+// 給藥輸入紀錄邏輯
+function addDrugToSection(tbodyId, selectElem) {
+    const drug = selectElem.value;
+    if (!drug) return;
+    const tbody = document.getElementById(tbodyId);
+    const tr = document.createElement('tr');
+    let dName = drug === 'CUSTOM' ? '' : drug;
+    let info = drugDB[drug] || { conc: '', dose: '', unit: 'mg/kg', ref: '' };
+    
+    tr.innerHTML = `
+        <td style="text-align: left; padding-left: 5px;">
+            <input type="text" value="${dName}" class="r-drug" placeholder="Drug Name" style="text-align: left; font-weight:bold;">
+            <span class="drug-reference">${info.ref}</span>
+        </td>
+        <td style="width: 10%;"><input type="number" class="r-dose" value="${info.dose}" step="0.01" oninput="calcRegular(this)"></td>
+        <td style="width: 10%;">
+            <select class="r-unit" onchange="calcRegular(this)">
+                <option value="mg/kg" ${info.unit==='mg/kg'?'selected':''}>mg/kg</option>
+                <option value="mcg/kg" ${info.unit==='mcg/kg'?'selected':''}>mcg/kg</option>
+            </select>
+        </td>
+        <td style="width: 10%;"><input type="number" class="r-conc" value="${info.conc}" step="0.01" oninput="calcRegular(this)"></td>
+        <td style="width: 10%;"><input type="number" class="r-total calc-result" readonly tabindex="-1"></td>
+        <td style="width: 10%;"><input type="number" class="r-amt calc-result" readonly tabindex="-1"></td>
+        <td style="width: 10%;"><input type="text" class="r-route" placeholder="輸入途徑"></td>
+        <td style="width: 10%;"><input type="time"></td>
+        <td style="width: 5%;"><button class="btn-del" onclick="this.closest('tr').remove();">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    selectElem.value = ""; 
+    calcRegular(tr.querySelector('.r-dose'));
+}
+
+function addIntraopBolus(selectElem) {
+    const drug = selectElem.value;
+    if (!drug) return;
+    const tbody = document.getElementById('tbody-intraop');
+    const tr = document.createElement('tr');
+    let dName = drug === 'CUSTOM' ? '' : drug;
+    
+    tr.innerHTML = `
+        <td style="text-align: left; padding-left: 5px;"><input type="text" value="${dName}" class="r-drug" placeholder="Drug Name" style="text-align: left; font-weight:bold;"></td>
+        <td style="width: 10%;"><input type="time" class="r-time"></td>
+        <td style="width: 10%;"><input type="number" class="r-dose" step="0.01" oninput="calcRegular(this)"></td>
+        <td style="width: 10%;"><select class="r-unit" onchange="calcRegular(this)"><option value="mg/kg">mg/kg</option><option value="mcg/kg">mcg/kg</option></select></td>
+        <td style="width: 10%;"><input type="number" class="r-conc" step="0.01" oninput="calcRegular(this)"></td>
+        <td style="width: 10%;"><input type="number" class="r-total calc-result" readonly tabindex="-1"></td>
+        <td style="width: 10%;"><input type="number" class="r-amt calc-result" readonly tabindex="-1"></td>
+        <td style="width: 15%;"><input type="text" class="r-route" placeholder="輸入途徑"></td>
+        <td style="width: 5%;"><button class="btn-del" onclick="this.closest('tr').remove();">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    selectElem.value = ""; 
+}
+
+function deleteBolusRow(btn) {
+    const tr = btn.closest('tr');
+    const name = (tr.querySelector('td') || {}).textContent || '';
+    if (!confirm(`確定刪除這筆給藥紀錄嗎？\n\n${name.trim() || '(未填藥名)'}`)) return;
+    tr.remove();
+    document.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function calcRegular(elem) {
+    const row = elem.closest('tr');
+    const weight = parseFloat(document.getElementById('patient-weight').value);
+    const dose = parseFloat(row.querySelector('.r-dose').value);
+    const conc = parseFloat(row.querySelector('.r-conc').value);
+    const unit = row.querySelector('.r-unit').value;
+    const resTotal = row.querySelector('.r-total');
+    const resAmt = row.querySelector('.r-amt');
+
+    if (!isNaN(weight) && !isNaN(dose)) {
+        let doseInMg = unit === 'mcg/kg' ? dose / 1000 : dose;
+        let totalMg = weight * doseInMg;
+        resTotal.value = totalMg < 0.1 ? totalMg.toFixed(4) : totalMg.toFixed(2);
+        if (!isNaN(conc) && conc > 0) {
+            let totalMl = totalMg / conc;
+            resAmt.value = totalMl < 0.1 ? totalMl.toFixed(3) : totalMl.toFixed(2);
+        } else { resAmt.value = ''; }
+    } else { resTotal.value = ''; resAmt.value = ''; }
+}
+
+function addCRIToSection(selectElem) {
+    const drug = selectElem.value;
+    if (!drug) return;
+    const tbody = document.getElementById('tbody-cri');
+    const tr = document.createElement('tr');
+    const currentWt = document.getElementById('patient-weight').value || '';
+    let dName = drug === 'CUSTOM' ? '' : drug;
+    let info = drugDB[drug] || { conc: '', n: 1, unit: 'mcg/kg/hr', ref: '' };
+
+    tr.innerHTML = `
+        <td style="text-align: left; padding-left: 5px;">
+            <input type="text" value="${dName}" class="c-drug" placeholder="CRI Name" style="text-align: left; font-weight:bold;">
+            <span class="drug-reference">${info.ref}</span>
+        </td>
+        <td><input type="number" class="c-conc" value="${info.conc}" step="0.01" oninput="calcCRI(this)"></td>
+        <td><input type="text" class="c-wt cri-sync-weight" value="${currentWt}" readonly tabindex="-1"></td>
+        <td><input type="number" class="c-vol" value="50" step="1" oninput="calcCRI(this)"></td>
+        <td><input type="number" class="c-n" value="${info.n}" step="0.1" oninput="calcCRI(this)"></td>
+        <td>
+            <select class="c-unit" onchange="calcCRI(this)">
+                <option value="mcg/kg/hr" ${info.unit==='mcg/kg/hr'?'selected':''}>mcg/kg/hr</option>
+                <option value="mcg/kg/min" ${info.unit==='mcg/kg/min'?'selected':''}>mcg/kg/min</option>
+                <option value="mg/kg/hr" ${info.unit==='mg/kg/hr'?'selected':''}>mg/kg/hr</option>
+            </select>
+        </td>
+        <td><input type="number" placeholder="0"></td>
+        <td style="padding: 2px;">
+            <div class="cri-result-panel"><div style="color:#718096; text-align:center;">等待輸入參數...</div></div>
+        </td>
+        <td><input type="text" placeholder="備註..."></td>
+        <td><button class="btn-del" onclick="this.closest('tr').remove();">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    selectElem.value = ""; 
+    calcCRI(tr.querySelector('.c-vol')); 
+}
+
+function calcCRI(elem) {
+    const row = elem.closest('tr');
+    const conc = parseFloat(row.querySelector('.c-conc').value);
+    const weight = parseFloat(document.getElementById('patient-weight').value);
+    const bagVol = parseFloat(row.querySelector('.c-vol').value);
+    const n = parseFloat(row.querySelector('.c-n').value);
+    const unit = row.querySelector('.c-unit').value;
+    const resPanel = row.querySelector('.cri-result-panel');
+
+    row.querySelector('.c-wt').value = isNaN(weight) ? '' : weight;
+
+    if (isNaN(conc) || isNaN(weight) || isNaN(bagVol) || isNaN(n) || conc <= 0) {
+        resPanel.innerHTML = '<div style="color:#718096; text-align:center;">請補齊參數</div>'; return;
+    }
+    let cMix = 0; 
+    if (unit === 'mcg/kg/hr') { cMix = (n * weight) / 1000; } 
+    else if (unit === 'mcg/kg/min') { cMix = (60 * n * weight) / 1000; } 
+    else if (unit === 'mg/kg/hr') { cMix = n * weight; }
+
+    const totalMgNeeded = cMix * bagVol;
+    const drawVol = totalMgNeeded / conc;
+    const diluentVol = bagVol - drawVol;
+
+    resPanel.innerHTML = `
+        <strong>抽藥：${drawVol.toFixed(2)} mL</strong>
+        <span>稀釋液：${diluentVol.toFixed(2)} mL</span>
+        <span>混合後濃度：${cMix.toFixed(4)} mg/mL</span>
+    `;
+}
+
+function updateGlobalCalculations() {
+    document.querySelectorAll('.r-dose').forEach(el => calcRegular(el));
+    document.querySelectorAll('.c-conc').forEach(el => calcCRI(el));
+}
+
+// ================= 收合與匯出邏輯 =================
+function toggleBlock(btn) {
+    const body = btn.closest('.plan-block').querySelector('.plan-block-body');
+    if (body.style.display === 'none') { body.style.display = 'block'; btn.textContent = '－'; } 
+    else { body.style.display = 'none'; btn.textContent = '＋'; }
+}
+
+let allPlansVisible = true;
+function toggleAllPlans() {
+    const wrapper = document.getElementById('plan-blocks-wrapper');
+    const mainBtn = document.querySelector('.btn-toggle-all');
+    allPlansVisible = !allPlansVisible;
+    wrapper.style.display = allPlansVisible ? 'block' : 'none';
+    mainBtn.textContent = allPlansVisible ? '＋ 展開麻醉計劃' : '－ 收合麻醉計劃';
+}
+
+function forceExpandAll() {
+    allPlansVisible = true;
+    document.getElementById('plan-blocks-wrapper').style.display = 'block';
+    document.querySelectorAll('.plan-block-body').forEach(b => b.style.display = 'block');
+    document.querySelectorAll('.btn-toggle-block').forEach(btn => btn.textContent = '－');
+    document.querySelector('.btn-toggle-all').textContent = '－ 收合麻醉計劃';
+}
+
+function exportPDFNative() {
+    forceExpandAll(); 
+    setTimeout(() => {
+        window.print();
+    }, 300); 
+}
+
+function exportCSV() {
+    if (currentGlobalSlot === 0) {
+        alert("目前沒有資料可以匯出喔！");
+        return;
+    }
+
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+    let headers = ["Time", "Anesthetic", "O2 L/min", "SpO2 (%)", "ETCO2 (mmHg)", "Peak (cmH2O)", "TV (ml)", "RR (bpm)", "Pulse (bpm)", "Sys BP (mmHg)", "Dia BP (mmHg)", "Mean BP (mmHg)", "Fluids", "Temp (°C)", "CRI"];
+    csvContent += headers.join(",") + "\n";
+
+    for(let i = 0; i < currentGlobalSlot; i++) {
+        let row = [
+            document.getElementById(`row-time-${i}`).textContent,
+            document.getElementById(`row-anes-${i}`).textContent,
+            document.getElementById(`row-o2-${i}`).textContent,
+            document.getElementById(`row-spo2-${i}`).textContent,
+            document.getElementById(`row-etco2-${i}`).textContent,
+            document.getElementById(`row-peak-${i}`).textContent,
+            document.getElementById(`row-tv-${i}`).textContent,
+            document.getElementById(`row-rr-${i}`).textContent,
+            document.getElementById(`row-pulse-${i}`).textContent,
+            document.getElementById(`row-sysbp-${i}`).textContent,
+            document.getElementById(`row-diabp-${i}`).textContent,
+            document.getElementById(`row-meanbp-${i}`).textContent,
+            document.getElementById(`row-fluids-${i}`).textContent,
+            document.getElementById(`row-temp-${i}`).textContent,
+            document.getElementById(`row-cri-${i}`).textContent
+        ];
+        let escapedRow = row.map(val => '"' + String(val).replace(/"/g, '""') + '"');
+        csvContent += escapedRow.join(",") + "\n";
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "Anesthesia_Record.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// ================= JSON 存檔與讀檔功能 =================
+
+function saveToJSON() {
+    const state = {
+        globalSlot: currentGlobalSlot,
+        maxPage: maxVisiblePage,
+        inputs: {},
+        cells: {},
+        bolus: {},
+        comments: {}
+    };
+
+    const formElements = document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea');
+    formElements.forEach((el, index) => {
+        state.inputs[index] = (el.type === 'checkbox') ? el.checked : el.value;
+    });
+
+    document.querySelectorAll('.data-cell').forEach(el => {
+        if (el.id && el.textContent) {
+            state.cells[el.id] = el.textContent;
+        }
+    });
+
+    for (let i = 1; i <= TOTAL_PAGES; i++) {
+        const tbody = document.getElementById(`bolus-tbody-${i}`);
+        if (tbody) state.bolus[`bolus-tbody-${i}`] = tbody.innerHTML;
+        
+        const comment = document.getElementById(`comments-${i}`);
+        if (comment) state.comments[`comments-${i}`] = comment.value;
+        
+        if (charts[i-1] && charts[i-1].data.bolusNames) {
+            state[`chartBolusNames-${i}`] = charts[i-1].data.bolusNames;
+        }
+    }
+
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    
+    let idValue = document.querySelector('.print-id-sync').textContent || 'Unknown';
+    let dateValue = new Date().toISOString().slice(0, 10);
+    downloadAnchorNode.setAttribute("download", `Anesthesia_${idValue}_${dateValue}.json`);
+    
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+function loadFromJSON(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const state = JSON.parse(e.target.result);
+            
+            while (maxVisiblePage < state.maxPage) {
+                addNewPage(false);
+            }
+            currentGlobalSlot = state.globalSlot;
+
+            const formElements = document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea');
+            formElements.forEach((el, index) => {
+                if (state.inputs[index] !== undefined) {
+                    if (el.type === 'checkbox') el.checked = state.inputs[index];
+                    else el.value = state.inputs[index];
+                }
+            });
+
+            for (const id in state.cells) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.textContent = state.cells[id];
+                    
+                    const idParts = id.split('-');
+                    const rowType = idParts[1]; 
+                    if (rowType === 'time' || rowType === 'time-bottom') continue;
+                    
+                    const globalSlot = parseInt(idParts[idParts.length - 1]);
+                    const targetPage = Math.floor(globalSlot / SLOTS_PER_PAGE) + 1;
+                    const localSlot = globalSlot % SLOTS_PER_PAGE;
+                    const currentChart = charts[targetPage - 1];
+                    
+                    let val = state.cells[id];
+                    let num = val === '-' || val === '' ? null : Number(val);
+                    let dsIndex = -1;
+                    
+                    switch (rowType) {
+                        case 'pulse': dsIndex = 0; break;
+                        case 'sysbp': dsIndex = 1; break;
+                        case 'diabp': dsIndex = 2; break;
+                        case 'meanbp': dsIndex = 3; break;
+                        case 'spo2': dsIndex = 4; break;
+                        case 'etco2': dsIndex = 5; break;
+                        case 'rr': dsIndex = 6; break;
+                        case 'temp': dsIndex = 7; break;
+                    }
+                    if (dsIndex !== -1 && currentChart) {
+                        currentChart.data.datasets[dsIndex].data[localSlot] = mapY(num);
+                    }
+                }
+            }
+
+            for (let i = 1; i <= TOTAL_PAGES; i++) {
+                const tbodyId = `bolus-tbody-${i}`;
+                if (state.bolus[tbodyId]) document.getElementById(tbodyId).innerHTML = state.bolus[tbodyId];
+                
+                const commentId = `comments-${i}`;
+                if (state.comments[commentId]) {
+                    const commentEl = document.getElementById(commentId);
+                    commentEl.value = state.comments[commentId];
+                    autoResize(commentEl);
+                }
+                
+                if (state[`chartBolusNames-${i}`] && charts[i-1]) {
+                    charts[i-1].data.bolusNames = state[`chartBolusNames-${i}`];
+                    state[`chartBolusNames-${i}`].forEach((name, idx) => {
+                        if (name) charts[i-1].data.datasets[8].data[idx] = mapY(280);
+                    });
+                }
+            }
+
+            charts.forEach(c => c.update());
+            updateGlobalCalculations();
+            
+            let lastPage = Math.floor(currentGlobalSlot / SLOTS_PER_PAGE) + 1;
+            if (lastPage > TOTAL_PAGES) lastPage = TOTAL_PAGES;
+            switchPage(lastPage);
+
+            alert("病歷資料讀取成功！");
+        } catch (err) {
+            alert("檔案格式錯誤或讀取失敗！");
+            console.error(err);
+        }
+        
+        event.target.value = '';
+    };
+    reader.readAsText(file);
+}
+</script>
+
+<!-- ===== EG-AUTOSAVE-START 自動存檔模組 v3 ===== -->
+<script>
+/* Evergreen 麻醉紀錄表 資料保全模組 v3.0（內嵌版）
+ * 自動草稿 / 離開攔截 / IndexedDB 快照 / 共用磁碟直寫
+ * 移除方式：刪除 EG-AUTOSAVE-START 到 EG-AUTOSAVE-END 之間的全部內容
+ * ========================================================================== */
+
+
+(function () {
+  'use strict';
+
+  /* ==========================================================================
+   * 專屬接線層 v2 — 對應 EverGreen 麻醉紀錄表的實際資料結構
+   * --------------------------------------------------------------------------
+   * 修正原始 saveToJSON/loadFromJSON 的索引錯位問題：
+   * 麻醉計劃的動態藥物列會改變 .ucd-form-container 內的欄位索引，
+   * 因此必須「先還原表格結構、再套用欄位值」，否則值會填到錯誤欄位。
+   * ======================================================================== */
+
+  const PLAN_TBODIES = ['tbody-premed', 'tbody-induction', 'tbody-analgesia', 'tbody-other', 'tbody-cri'];
+  const INTRAOP_FIELDS = ['.r-drug', '.r-time', '.r-dose', '.r-unit', '.r-conc', '.r-total', '.r-amt', '.r-route'];
+
+  function pageReady() {
+    try {
+      return typeof charts !== 'undefined' && Array.isArray(charts) && charts.length > 0
+          && typeof TOTAL_PAGES !== 'undefined'
+          && typeof SLOTS_PER_PAGE !== 'undefined'
+          && typeof addNewPage === 'function'
+          && document.querySelector('.data-cell') !== null;
+    } catch (e) { return false; }
+  }
+
+  function waitForPage(timeoutMs) {
+    return new Promise((res) => {
+      const t0 = Date.now();
+      (function poll() {
+        if (pageReady()) return res(true);
+        if (Date.now() - t0 > timeoutMs) return res(false);
+        setTimeout(poll, 200);
+      })();
+    });
+  }
+
+  function egSerialize() {
+    if (!pageReady()) return null;
+
+    const state = {
+      __v: 2,
+      globalSlot: currentGlobalSlot,
+      maxPage: maxVisiblePage,
+      inputs: {}, cells: {}, bolus: {}, comments: {},
+      plans: {},        // 麻醉計劃各表的列結構
+      intraop: [],      // 術中針劑暫存區（原始存檔完全沒收這張）
+    };
+
+    // 1. 先記下動態表格結構，還原時要先重建才對得回索引
+    PLAN_TBODIES.forEach(id => {
+      const tb = document.getElementById(id);
+      if (tb) state.plans[id] = tb.innerHTML;
+    });
+
+    // 2. 欄位值（依 DOM 索引，與原始格式相容）
+    document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea')
+      .forEach((el, i) => { state.inputs[i] = (el.type === 'checkbox') ? el.checked : el.value; });
+
+    // 3. 術中針劑暫存列：在容器外，不在 inputs 裡，逐格收
+    document.querySelectorAll('#tbody-intraop tr').forEach(tr => {
+      const row = {};
+      INTRAOP_FIELDS.forEach(sel => {
+        const el = tr.querySelector(sel);
+        row[sel] = el ? el.value : '';
+      });
+      state.intraop.push(row);
+    });
+
+    // 4. 網格記錄（contenteditable，不是 input，原始通用掃描抓不到）
+    document.querySelectorAll('.data-cell').forEach(el => {
+      if (el.id && el.textContent) state.cells[el.id] = el.textContent;
+    });
+
+    // 5. 每頁的 Bolus 表、備註、圖表藥名標記
+    for (let i = 1; i <= TOTAL_PAGES; i++) {
+      const tb = document.getElementById(`bolus-tbody-${i}`);
+      if (tb) state.bolus[`bolus-tbody-${i}`] = tb.innerHTML;
+      const c = document.getElementById(`comments-${i}`);
+      if (c) state.comments[`comments-${i}`] = c.value;
+      if (charts[i - 1] && charts[i - 1].data.bolusNames) {
+        state[`chartBolusNames-${i}`] = charts[i - 1].data.bolusNames;
+      }
+    }
+    return state;
+  }
+
+  function egDeserialize(state) {
+    if (!state || !pageReady()) return;
+    const SLOTS = SLOTS_PER_PAGE, PAGES = TOTAL_PAGES;
+
+    // 1. 先補足分頁
+    while (maxVisiblePage < state.maxPage) addNewPage(false);
+    currentGlobalSlot = state.globalSlot;
+
+    // 2. 關鍵修正：先重建麻醉計劃的藥物列，索引才對得回去
+    if (state.plans) {
+      PLAN_TBODIES.forEach(id => {
+        const tb = document.getElementById(id);
+        if (tb && typeof state.plans[id] === 'string') tb.innerHTML = state.plans[id];
+      });
+    }
+
+    // 3. 現在索引已對齊，套用欄位值
+    document.querySelectorAll('.ucd-form-container input, .ucd-form-container select, .ucd-form-container textarea')
+      .forEach((el, i) => {
+        if (state.inputs[i] === undefined) return;
+        if (el.type === 'checkbox') el.checked = state.inputs[i];
+        else el.value = state.inputs[i];
+      });
+
+    // 4. 術中針劑暫存列：重建列再填值
+    if (Array.isArray(state.intraop) && state.intraop.length) {
+      const tb = document.getElementById('tbody-intraop');
+      const picker = document.querySelector('select[onchange*="addIntraopBolus"]');
+      if (tb && picker && typeof addIntraopBolus === 'function') {
+        tb.innerHTML = '';
+        state.intraop.forEach(row => {
+          picker.value = 'CUSTOM';
+          addIntraopBolus(picker);
+          const tr = tb.lastElementChild;
+          if (!tr) return;
+          INTRAOP_FIELDS.forEach(sel => {
+            const el = tr.querySelector(sel);
+            if (el && row[sel] !== undefined) el.value = row[sel];
+          });
+        });
+        picker.value = '';
+      }
+    }
+
+    // 5. 網格記錄 + 圖表資料點
+    for (const id in state.cells) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.textContent = state.cells[id];
+
+      const parts = id.split('-');
+      const rowType = parts[1];
+      if (rowType === 'time' || rowType === 'time-bottom') continue;
+
+      const gSlot = parseInt(parts[parts.length - 1]);
+      const page = Math.floor(gSlot / SLOTS) + 1;
+      const local = gSlot % SLOTS;
+      const chart = charts[page - 1];
+
+      const val = state.cells[id];
+      const num = (val === '-' || val === '') ? null : Number(val);
+      const dsIndex = { pulse: 0, sysbp: 1, diabp: 2, meanbp: 3, spo2: 4, etco2: 5, rr: 6, temp: 7 }[rowType];
+      if (dsIndex !== undefined && chart) chart.data.datasets[dsIndex].data[local] = mapY(num);
+    }
+
+    // 6. 每頁 Bolus、備註、圖表藥名
+    for (let i = 1; i <= PAGES; i++) {
+      const tbId = `bolus-tbody-${i}`;
+      if (state.bolus[tbId] && document.getElementById(tbId)) {
+        document.getElementById(tbId).innerHTML = state.bolus[tbId];
+      }
+      const cId = `comments-${i}`;
+      if (state.comments[cId]) {
+        const c = document.getElementById(cId);
+        if (c) { c.value = state.comments[cId]; if (typeof autoResize === 'function') autoResize(c); }
+      }
+      if (state[`chartBolusNames-${i}`] && charts[i - 1]) {
+        charts[i - 1].data.bolusNames = state[`chartBolusNames-${i}`];
+        state[`chartBolusNames-${i}`].forEach((name, idx) => {
+          if (name) charts[i - 1].data.datasets[8].data[idx] = mapY(280);
+        });
+      }
+    }
+
+    charts.forEach(c => c.update());
+    if (typeof updateGlobalCalculations === 'function') updateGlobalCalculations();
+
+    let last = Math.floor(currentGlobalSlot / SLOTS) + 1;
+    if (last > PAGES) last = PAGES;
+    if (typeof switchPage === 'function') switchPage(last);
+  }
+
+  function egRecordId() {
+    const el = document.querySelector('.print-id-sync');
+    const v = (el && el.textContent || '').trim();
+    return v || 'NOID';
+  }
+
+  /* ==========================================================================
+   * CONFIG — 你只需要動這一段
+   * ======================================================================== */
+  const CONFIG = {
+    serialize: () => egSerialize(),
+    deserialize: (obj) => egDeserialize(obj),
+    getRecordId: () => egRecordId(),
+
+    debounceMs: 800,          // 停止輸入後多久寫一次草稿
+    heartbeatMs: 30000,       // 保險：每 30 秒也存一次
+    driveSyncMs: 120000,      // 共用磁碟同步間隔（2 分鐘）
+    idbKeepCount: 30,         // IndexedDB 保留幾份歷史快照
+    lsPrefix: 'eg-anes-draft:',
+  };
+
+  /* ==========================================================================
+   * 內部狀態
+   * ======================================================================== */
+  const state = {
+    dirty: false,
+    lastSavedAt: null,
+    storageOK: true,
+    dirHandle: null,
+    driveStatus: 'off',       // off | ready | error
+    debounceTimer: null,
+  };
+
+  const nowStamp = () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  };
+
+  const clockText = () => new Date().toLocaleTimeString('zh-TW', { hour12: false });
+
+  /* ==========================================================================
+   * 資料擷取 / 還原
+   * ======================================================================== */
+  function collect() { return CONFIG.serialize(); }
+  function restore(data) { return CONFIG.deserialize(data); }
+
+  /* ==========================================================================
+   * L1 — localStorage 草稿
+   * ======================================================================== */
+  function probeStorage() {
+    try {
+      localStorage.setItem('__eg_probe', '1');
+      localStorage.removeItem('__eg_probe');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function draftKey() {
+    return CONFIG.lsPrefix + CONFIG.getRecordId();
+  }
+
+  function saveDraft() {
+    const snap = collect();
+    if (!snap) return;                 // 頁面尚未初始化完成，跳過這一次
+    const payload = {
+      savedAt: new Date().toISOString(),
+      recordId: CONFIG.getRecordId(),
+      data: snap,
+    };
+    if (!state.storageOK) { idb.snapshot(payload); return; }
+    try {
+      localStorage.setItem(draftKey(), JSON.stringify(payload));
+      state.lastSavedAt = new Date();
+      ui.tick();
+    } catch (e) {
+      if (e && e.name === 'QuotaExceededError') {
+        pruneOldDrafts();
+        try { localStorage.setItem(draftKey(), JSON.stringify(payload)); } catch (_) {
+          ui.warn('草稿空間已滿，請按「清理舊草稿」或改存共用磁碟。');
+        }
+      }
+    }
+    idb.snapshot(payload);
+  }
+
+  function pruneOldDrafts() {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith(CONFIG.lsPrefix));
+    const scored = keys.map(k => {
+      try { return { k, t: JSON.parse(localStorage.getItem(k)).savedAt }; }
+      catch (_) { return { k, t: '' }; }
+    }).sort((a, b) => a.t.localeCompare(b.t));
+    scored.slice(0, Math.max(0, scored.length - 3)).forEach(o => localStorage.removeItem(o.k));
+  }
+
+  function findDrafts() {
+    if (!state.storageOK) return [];
+    return Object.keys(localStorage)
+      .filter(k => k.startsWith(CONFIG.lsPrefix))
+      .map(k => { try { return { key: k, ...JSON.parse(localStorage.getItem(k)) }; } catch (_) { return null; } })
+      .filter(d => d && d.data && d.data.__v >= 2)
+      .sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+  }
+
+  function markDirty() {
+    state.dirty = true;
+    clearTimeout(state.debounceTimer);
+    state.debounceTimer = setTimeout(saveDraft, CONFIG.debounceMs);
+  }
+
+  /* ==========================================================================
+   * L3 — IndexedDB 快照
+   * ======================================================================== */
+  const idb = {
+    db: null,
+
+    open() {
+      return new Promise((res, rej) => {
+        if (idb.db) return res(idb.db);
+        const req = indexedDB.open('eg-anesthesia', 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('snapshots')) {
+            db.createObjectStore('snapshots', { keyPath: 'id', autoIncrement: true });
+          }
+          if (!db.objectStoreNames.contains('handles')) {
+            db.createObjectStore('handles');
+          }
+        };
+        req.onsuccess = () => { idb.db = req.result; res(idb.db); };
+        req.onerror = () => rej(req.error);
+      });
+    },
+
+    async snapshot(payload) {
+      try {
+        const db = await idb.open();
+        const tx = db.transaction('snapshots', 'readwrite');
+        const store = tx.objectStore('snapshots');
+        store.add(payload);
+        // 修剪：只留最近 N 份
+        const all = store.getAllKeys();
+        all.onsuccess = () => {
+          const keys = all.result;
+          if (keys.length > CONFIG.idbKeepCount) {
+            keys.slice(0, keys.length - CONFIG.idbKeepCount).forEach(k => store.delete(k));
+          }
+        };
+      } catch (_) { /* 快照失敗不影響主流程 */ }
+    },
+
+    async put(storeName, key, val) {
+      const db = await idb.open();
+      return new Promise((res, rej) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put(val, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    },
+
+    async get(storeName, key) {
+      const db = await idb.open();
+      return new Promise((res, rej) => {
+        const req = db.transaction(storeName, 'readonly').objectStore(storeName).get(key);
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+      });
+    },
+  };
+
+  /* ==========================================================================
+   * L4 — 共用磁碟直寫（File System Access API）
+   * ======================================================================== */
+  const drive = {
+    supported: typeof window.showDirectoryPicker === 'function',
+
+    async choose() {
+      if (!drive.supported) {
+        ui.warn('這個瀏覽器不支援直寫共用磁碟，請改用 Chrome 或 Edge。');
+        return false;
+      }
+      try {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        await idb.put('handles', 'driveDir', handle);
+        state.dirHandle = handle;
+        state.driveStatus = 'ready';
+        ui.tick();
+        await drive.write();
+        return true;
+      } catch (e) {
+        return false;   // 使用者取消
+      }
+    },
+
+    // 頁面載入時嘗試接回上次選的資料夾
+    async reconnect() {
+      if (!drive.supported) return;
+      const handle = await idb.get('handles', 'driveDir').catch(() => null);
+      if (!handle) return;
+      const perm = await handle.queryPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        state.dirHandle = handle;
+        state.driveStatus = 'ready';
+      } else {
+        // 需要一次點擊才能重新授權
+        state.dirHandle = handle;
+        state.driveStatus = 'off';
+      }
+      ui.tick();
+    },
+
+    async ensurePermission() {
+      if (!state.dirHandle) return false;
+      let perm = await state.dirHandle.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') {
+        perm = await state.dirHandle.requestPermission({ mode: 'readwrite' });
+      }
+      const ok = perm === 'granted';
+      state.driveStatus = ok ? 'ready' : 'error';
+      ui.tick();
+      return ok;
+    },
+
+    async writeFile(filename, text) {
+      const fh = await state.dirHandle.getFileHandle(filename, { create: true });
+      const w = await fh.createWritable();
+      await w.write(new Blob([text], { type: 'application/json' }));
+      await w.close();
+    },
+
+    // 進行中：固定檔名覆寫，不會塞爆資料夾
+    async write() {
+      if (!state.dirHandle) return;
+      if (!(await drive.ensurePermission())) return;
+      try {
+        const snap = collect();
+        if (!snap) return;
+        const payload = { savedAt: new Date().toISOString(), recordId: CONFIG.getRecordId(), data: snap };
+        await drive.writeFile(`進行中_${payload.recordId}.json`, JSON.stringify(payload, null, 2));
+        state.driveStatus = 'ready';
+      } catch (e) {
+        state.driveStatus = 'error';
+        ui.warn('寫入共用磁碟失敗：' + (e.message || e));
+      }
+      ui.tick();
+    },
+
+    // 結案：寫一份帶時間戳的定稿
+    async writeFinal() {
+      const id = CONFIG.getRecordId();
+      const snap = collect();
+      const text = JSON.stringify({ finalizedAt: new Date().toISOString(), recordId: id, data: snap }, null, 2);
+      const name = `${nowStamp()}_${id}_麻醉紀錄.json`;
+
+      if (state.dirHandle && await drive.ensurePermission()) {
+        await drive.writeFile(name, text);
+        try {
+          await state.dirHandle.removeEntry(`進行中_${id}.json`);
+        } catch (_) { /* 沒有進行中檔就算了 */ }
+        return true;
+      }
+      // 退路：走瀏覽器下載
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      return false;
+    },
+  };
+
+  /* ==========================================================================
+   * 狀態列 UI — 做成生理監視器讀數的樣子，跟表單本身區隔開
+   * ======================================================================== */
+  const ui = {
+    root: null,
+
+    build() {
+      const bar = document.createElement('div');
+      bar.id = 'eg-save-bar';
+      bar.innerHTML = `
+        <span class="eg-dot"></span>
+        <span class="eg-label">草稿</span>
+        <span class="eg-time" data-role="time">—</span>
+        <span class="eg-sep">/</span>
+        <span class="eg-label">共用磁碟</span>
+        <span class="eg-drive" data-role="drive">未連線</span>
+        <button type="button" data-role="pick">選擇資料夾</button>
+      `;
+      const css = document.createElement('style');
+      css.textContent = `
+        #eg-save-bar{position:fixed;right:12px;bottom:12px;z-index:99999;
+          display:flex;align-items:center;gap:8px;
+          font:500 12px/1 ui-monospace,"SF Mono",Consolas,monospace;
+          letter-spacing:.04em;color:#c8f4dd;background:#0d1a17;
+          border:1px solid #1f3d34;border-radius:3px;padding:8px 10px;
+          box-shadow:0 2px 12px rgba(0,0,0,.35)}
+        #eg-save-bar .eg-label{color:#5e8577;text-transform:uppercase;font-size:10px}
+        #eg-save-bar .eg-sep{color:#1f3d34}
+        #eg-save-bar .eg-dot{width:7px;height:7px;border-radius:50%;
+          background:#2ee6a0;box-shadow:0 0 6px #2ee6a0;transition:background .2s}
+        #eg-save-bar.is-dirty .eg-dot{background:#f5c451;box-shadow:0 0 6px #f5c451}
+        #eg-save-bar.is-error .eg-dot{background:#ff5c5c;box-shadow:0 0 6px #ff5c5c}
+        #eg-save-bar button{font:inherit;color:#c8f4dd;background:#16302a;
+          border:1px solid #24544a;border-radius:2px;padding:4px 8px;cursor:pointer}
+        #eg-save-bar button:hover{background:#1f4239}
+        #eg-save-bar button:focus-visible{outline:2px solid #2ee6a0;outline-offset:2px}
+        #eg-restore{position:fixed;inset:0;z-index:100000;display:flex;
+          align-items:center;justify-content:center;background:rgba(6,14,12,.72)}
+        #eg-restore .box{background:#fff;border-radius:4px;padding:22px 24px;
+          max-width:420px;font:14px/1.6 system-ui,"Noto Sans TC",sans-serif;
+          box-shadow:0 12px 40px rgba(0,0,0,.3)}
+        #eg-restore h3{margin:0 0 8px;font-size:16px}
+        #eg-restore .meta{color:#5e8577;font:12px ui-monospace,monospace;margin-bottom:14px}
+        #eg-restore .row{display:flex;gap:8px;justify-content:flex-end}
+        #eg-restore button{font:13px system-ui;padding:7px 14px;border-radius:3px;cursor:pointer}
+        #eg-restore .primary{background:#16302a;color:#fff;border:1px solid #16302a}
+        #eg-restore .ghost{background:#fff;color:#444;border:1px solid #ccc}
+        @media (prefers-reduced-motion:reduce){#eg-save-bar *{transition:none!important}}
+      `;
+      document.head.appendChild(css);
+      document.body.appendChild(bar);
+      ui.root = bar;
+
+      bar.querySelector('[data-role="pick"]').addEventListener('click', () => {
+        if (state.dirHandle && state.driveStatus !== 'ready') drive.ensurePermission().then(drive.write);
+        else drive.choose();
+      });
+      ui.tick();
+    },
+
+    tick() {
+      if (!ui.root) return;
+      ui.root.querySelector('[data-role="time"]').textContent =
+        state.lastSavedAt ? clockText() : '尚未存檔';
+      const d = ui.root.querySelector('[data-role="drive"]');
+      d.textContent = { off: '未連線', ready: '已連線', error: '寫入失敗' }[state.driveStatus];
+      ui.root.classList.toggle('is-dirty', state.dirty);
+      ui.root.classList.toggle('is-error', state.driveStatus === 'error' || !state.storageOK);
+    },
+
+    warn(msg) { console.warn('[EGSave]', msg); },
+
+    askRestore(draft) {
+      return new Promise((res) => {
+        const wrap = document.createElement('div');
+        wrap.id = 'eg-restore';
+        const when = new Date(draft.savedAt).toLocaleString('zh-TW', { hour12: false });
+        wrap.innerHTML = `
+          <div class="box" role="dialog" aria-modal="true">
+            <h3>偵測到未完成的麻醉紀錄</h3>
+            <div class="meta">病歷號 ${draft.recordId}　最後存檔 ${when}</div>
+            <p style="margin:0 0 16px">要把這份紀錄接回來繼續填嗎？選擇捨棄會清掉這份草稿。</p>
+            <div class="row">
+              <button class="ghost" data-a="drop">捨棄草稿</button>
+              <button class="primary" data-a="restore">接回來繼續填</button>
+            </div>
+          </div>`;
+        document.body.appendChild(wrap);
+        wrap.addEventListener('click', (e) => {
+          const a = e.target.getAttribute && e.target.getAttribute('data-a');
+          if (!a) return;
+          wrap.remove();
+          res(a === 'restore');
+        });
+      });
+    },
+  };
+
+  /* ==========================================================================
+   * 啟動
+   * ======================================================================== */
+  async function init() {
+    state.storageOK = probeStorage();
+    ui.build();
+
+    if (!state.storageOK) {
+      alert('警告：目前的瀏覽器模式無法自動儲存草稿（通常是無痕視窗）。\n請關閉無痕模式後重開，否則資料只在記憶體中。');
+    }
+
+    await drive.reconnect();
+
+    // 等表格真的畫出來再動作，否則格子還不存在，資料會落空
+    const ready = await waitForPage(20000);
+    if (!ready) {
+      state.driveStatus = 'error';
+      ui.tick();
+      ui.warn('頁面初始化逾時，自動存檔未啟動。請重新整理。');
+      alert('自動存檔啟動失敗：麻醉表尚未完成初始化。\n請按 Ctrl+Shift+R 重新整理再試一次。');
+      return;
+    }
+
+    // 還原草稿
+    const drafts = findDrafts();
+    if (drafts.length) {
+      const d = drafts[0];
+      const keep = await ui.askRestore(d);
+      if (keep) {
+        try {
+          restore(d.data);
+          state.lastSavedAt = new Date(d.savedAt);
+        } catch (err) {
+          console.error('[EGSave] 還原失敗', err);
+          alert('草稿還原時發生錯誤，資料已保留在存檔中。\n請按 F12 開啟主控台，把紅字截圖回報。');
+        }
+      }
+      else localStorage.removeItem(d.key);
+      ui.tick();
+    }
+
+    // L1 觸發：capture 模式抓 input / change（含 contenteditable 的網格）
+    document.addEventListener('input', markDirty, true);
+    document.addEventListener('change', markDirty, true);
+
+    // 程式碼新增/刪除藥物列不會發出 input 事件，要靠 MutationObserver
+    const watchIds = ['tbody-premed', 'tbody-induction', 'tbody-analgesia',
+                      'tbody-other', 'tbody-cri', 'tbody-intraop'];
+    const mo = new MutationObserver(markDirty);
+    watchIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) mo.observe(el, { childList: true, subtree: true });
+    });
+    for (let i = 1; i <= (TOTAL_PAGES || 8); i++) {
+      const el = document.getElementById(`bolus-tbody-${i}`);
+      if (el) mo.observe(el, { childList: true, subtree: true });
+    }
+
+    // 保險心跳
+    setInterval(() => { if (state.dirty) saveDraft(); }, CONFIG.heartbeatMs);
+
+    // L4 定時同步
+    setInterval(() => { if (state.dirHandle) drive.write(); }, CONFIG.driveSyncMs);
+
+    // L2 離開攔截
+    window.addEventListener('beforeunload', (e) => {
+      if (!state.dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    // 切到背景時立刻存一次（分頁被系統回收前的最後機會）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveDraft();
+    });
+  }
+
+  /* ==========================================================================
+   * 對外 API
+   * ======================================================================== */
+  window.EGSave = {
+    config: CONFIG,
+    save: saveDraft,
+    async finalize() {
+      saveDraft();
+      const toDrive = await drive.writeFinal();
+      try { localStorage.removeItem(draftKey()); } catch (_) {}
+      state.dirty = false;
+      ui.tick();
+      alert(toDrive
+        ? '定稿已寫入共用磁碟。'
+        : '共用磁碟未連線，定稿已改存到下載資料夾，請手動歸檔。');
+    },
+    pickDriveFolder: () => drive.choose(),
+    listSnapshots: async () => {
+      const db = await idb.open();
+      return new Promise((res) => {
+        const req = db.transaction('snapshots', 'readonly').objectStore('snapshots').getAll();
+        req.onsuccess = () => res(req.result);
+      });
+    },
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+
+</script>
+<!-- ===== EG-AUTOSAVE-END ===== -->
+
+</body>
+</html>
