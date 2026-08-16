@@ -2213,6 +2213,984 @@ function loadFromJSON(event) {
 
 </script>
 <!-- ===== EG-AUTOSAVE-END ===== -->
+<!-- ===== EVERGREEN v2.1 SAFETY + WORKFLOW PATCH =====
+貼在現行 index.html 最下面，位置：<!-- ===== EG-AUTOSAVE-END ===== --> 之後、</body> 之前
+版本：2026-08-16
+-->
+<script id="eg-v21-safety-workflow-patch">
+(() => {
+  'use strict';
+
+  const PATCH_VERSION = '2.1-safety-workflow-20260816';
+  const FROZEN_READER = 'index-v2-frozen.html';
+  const BOLUS_MARKER_Y = 280;
+
+  const CLINICIANS = [
+    '林長青', '蔣雨青', '洪郁婷', '劉昱貝', '張展華', '黃奕凡',
+    '施以欣', '王鈺雯', '趙子宜', '鄭茜尹', '邱靖倫', '吳冠倫',
+    '楊仁禧', '王文彥', '陳子彤', '林怡君', '陳舜真'
+  ];
+
+  const byId = (id) => document.getElementById(id);
+  const timeToMinutes = (t) => {
+    const m = /^(\d{2}):(\d{2})$/.exec(String(t || '').trim());
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const sortKey = (day, time) => {
+    const mins = timeToMinutes(time);
+    return (Number(day) || 0) * 1440 + (mins == null ? 0 : mins);
+  };
+
+  function warn(msg) {
+    console.warn('[EverGreen v2.1]', msg);
+  }
+
+  function addPatchStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+      .eg-v21-agent-row{display:flex;gap:4px;align-items:center}
+      .eg-v21-agent-row select{width:58px!important;padding-left:2px!important;padding-right:2px!important}
+      .eg-v21-agent-row input{width:58px!important}
+      .eg-v21-unmatched{background:#fff5f5!important;outline:2px solid #fc8181;outline-offset:-2px}
+      .eg-v21-unmatched td:first-child::after{
+        content:"  ⚠ 時間無對應監測紀錄"; color:#c53030; font-size:9px; font-weight:bold
+      }
+      .eg-v21-cri-error{color:#c53030!important;background:#fff5f5!important;border-color:#feb2b2!important}
+      .eg-v21-cri-warn{color:#975a16!important;background:#fffaf0!important;border-color:#fbd38d!important}
+      #eg-save-bar .eg-drive-time{color:#c8f4dd}
+      #eg-save-bar .eg-drive-time.is-stale{color:#ff8a8a;font-weight:700}
+      @media print {.eg-v21-unmatched{outline:none!important}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 1. Surgeon / Anesthetist：真正下拉式，但維持「一個欄位換一個欄位」
+  //    不新增第二個 input，避免再平白移動 DOM index。
+  //    「其他 / 自訂」使用 prompt，輸入後加入本次病例的 select option。
+  // ---------------------------------------------------------------------------
+  function replaceClinicianField(labelText) {
+    const lines = [...document.querySelectorAll('.ucd-top-info .info-line')];
+    const line = lines.find(el => {
+      const s = el.querySelector('span');
+      return s && s.textContent.trim() === labelText;
+    });
+    if (!line) return;
+
+    const old = line.querySelector('input, select');
+    if (!old || old.dataset.egV21Clinician === '1') return;
+
+    const select = document.createElement('select');
+    select.dataset.egV21Clinician = '1';
+    select.setAttribute('aria-label', labelText.replace(':', ''));
+    select.appendChild(new Option('', ''));
+
+    CLINICIANS.forEach(name => select.appendChild(new Option(name, name)));
+    select.appendChild(new Option('其他 / 自訂…', '__CUSTOM__'));
+
+    const oldValue = String(old.value || '').trim();
+    if (oldValue && !CLINICIANS.includes(oldValue)) {
+      select.insertBefore(new Option(oldValue, oldValue), select.lastElementChild);
+    }
+    select.value = oldValue;
+
+    select.addEventListener('change', () => {
+      if (select.value !== '__CUSTOM__') return;
+      const custom = prompt(`請輸入${labelText.replace(':', '')}姓名：`, '');
+      if (!custom || !custom.trim()) {
+        select.value = '';
+        return;
+      }
+      const value = custom.trim();
+      const option = new Option(value, value);
+      select.insertBefore(option, select.lastElementChild);
+      select.value = value;
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    old.replaceWith(select);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. Anesthetic：ISO / SEVO + %
+  //    agent 在頂部輸入面板，原本就不在 .ucd-form-container index-save 範圍。
+  // ---------------------------------------------------------------------------
+  function setupAnestheticAgent() {
+    const input = byId('anes');
+    if (!input || byId('anes-agent')) return;
+
+    input.type = 'number';
+    input.step = '0.1';
+    input.min = '0';
+    input.placeholder = '%';
+    input.setAttribute('aria-label', 'Anesthetic concentration percent');
+
+    const row = document.createElement('div');
+    row.className = 'eg-v21-agent-row';
+
+    const agent = document.createElement('select');
+    agent.id = 'anes-agent';
+    agent.setAttribute('aria-label', 'Anesthetic agent');
+    agent.appendChild(new Option('ISO', 'ISO'));
+    agent.appendChild(new Option('SEVO', 'SEVO'));
+
+    input.parentNode.insertBefore(row, input);
+    row.appendChild(agent);
+    row.appendChild(input);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3. Drug DB：不再預填 dose；未完整建檔的 shortcut 先移除
+  // ---------------------------------------------------------------------------
+  function removeDrugDefaults() {
+    try {
+      if (typeof drugDB === 'object' && drugDB) {
+        Object.values(drugDB).forEach(info => {
+          if (info && Object.prototype.hasOwnProperty.call(info, 'dose')) info.dose = '';
+        });
+      }
+    } catch (e) {
+      warn('drugDB default dose 清除失敗：' + e.message);
+    }
+  }
+
+  function removeIncompleteDrugOptions() {
+    document.querySelectorAll('.drug-selector:not(.cri-selector)').forEach(sel => {
+      [...sel.options].forEach(opt => {
+        if (opt.value === 'Acepromazine' || opt.value === 'Methadone') opt.remove();
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. Regular dose validation
+  // ---------------------------------------------------------------------------
+  window.calcRegular = function calcRegularV21(elem) {
+    const row = elem && elem.closest ? elem.closest('tr') : null;
+    if (!row) return;
+
+    const weight = parseFloat(byId('patient-weight')?.value);
+    const dose = parseFloat(row.querySelector('.r-dose')?.value);
+    const conc = parseFloat(row.querySelector('.r-conc')?.value);
+    const unit = row.querySelector('.r-unit')?.value;
+    const resTotal = row.querySelector('.r-total');
+    const resAmt = row.querySelector('.r-amt');
+    if (!resTotal || !resAmt) return;
+
+    resTotal.setCustomValidity('');
+    resAmt.setCustomValidity('');
+
+    const invalidBase =
+      !Number.isFinite(weight) || weight <= 0 ||
+      !Number.isFinite(dose) || dose < 0;
+
+    if (invalidBase) {
+      resTotal.value = '';
+      resAmt.value = '';
+      return;
+    }
+
+    const doseInMg = unit === 'mcg/kg' ? dose / 1000 : dose;
+    const totalMg = weight * doseInMg;
+
+    if (!Number.isFinite(totalMg) || totalMg < 0) {
+      resTotal.value = '';
+      resAmt.value = '';
+      return;
+    }
+
+    resTotal.value = totalMg < 0.1 ? totalMg.toFixed(4) : totalMg.toFixed(2);
+
+    if (!Number.isFinite(conc) || conc <= 0) {
+      resAmt.value = '';
+      return;
+    }
+
+    const totalMl = totalMg / conc;
+    if (!Number.isFinite(totalMl) || totalMl < 0) {
+      resAmt.value = '';
+      return;
+    }
+    resAmt.value = totalMl < 0.1 ? totalMl.toFixed(3) : totalMl.toFixed(2);
+  };
+
+  // ---------------------------------------------------------------------------
+  // 5. CRI：Target dose + Pump rate 都是輸入；N 從 UI 移除
+  // ---------------------------------------------------------------------------
+  function setupCRIHeader() {
+    const tbody = byId('tbody-cri');
+    const table = tbody && tbody.closest('table');
+    const th = table ? table.querySelectorAll('thead th') : [];
+    if (th.length >= 10) {
+      th[0].innerHTML = '藥物 (CRI)';
+      th[1].innerHTML = '原液濃度<br>(mg/mL)';
+      th[2].innerHTML = '體重<br>(kg)';
+      th[3].innerHTML = '最終總量<br>(mL)';
+      th[4].innerHTML = '目標劑量';
+      th[5].innerHTML = '目標單位';
+      th[6].innerHTML = 'Pump rate<br>(mL/hr)';
+      th[7].innerHTML = '配製 / 回算結果';
+      th[8].innerHTML = '備註';
+    }
+
+    const note = document.querySelector('.cri-note-box');
+    if (note) {
+      note.textContent =
+        'CRI：請輸入「目標劑量」與「Pump rate」。系統依體重、原液濃度與最終總量計算配製量，並由最終濃度 × Pump rate 重新回算實際輸注劑量。配製結果以「最終總量 = 設定總量」為前提。';
+    }
+  }
+
+  window.addCRIToSection = function addCRIToSectionV21(selectElem) {
+    const drug = selectElem.value;
+    if (!drug) return;
+
+    const tbody = byId('tbody-cri');
+    const tr = document.createElement('tr');
+    const currentWt = byId('patient-weight')?.value || '';
+    const dName = drug === 'CUSTOM' ? '' : drug;
+    let info = {};
+    try { info = drugDB[drug] || {}; } catch (_) {}
+
+    const makeInput = (cls, type='number') => {
+      const x = document.createElement('input');
+      x.type = type;
+      x.className = cls;
+      return x;
+    };
+
+    // drug + reference
+    const tdDrug = document.createElement('td');
+    tdDrug.style.textAlign = 'left';
+    tdDrug.style.paddingLeft = '5px';
+    const drugInput = makeInput('c-drug', 'text');
+    drugInput.value = dName;
+    drugInput.placeholder = 'CRI Name';
+    drugInput.style.textAlign = 'left';
+    drugInput.style.fontWeight = 'bold';
+    const ref = document.createElement('span');
+    ref.className = 'drug-reference';
+    ref.textContent = info.ref || '';
+    tdDrug.append(drugInput, ref);
+
+    // stock conc
+    const tdConc = document.createElement('td');
+    const conc = makeInput('c-conc');
+    conc.value = info.conc ?? '';
+    conc.step = '0.01';
+    conc.addEventListener('input', () => calcCRI(conc));
+    tdConc.appendChild(conc);
+
+    // weight
+    const tdWt = document.createElement('td');
+    const wt = makeInput('c-wt cri-sync-weight', 'text');
+    wt.value = currentWt;
+    wt.readOnly = true;
+    wt.tabIndex = -1;
+    tdWt.appendChild(wt);
+
+    // final volume
+    const tdVol = document.createElement('td');
+    const vol = makeInput('c-vol');
+    vol.value = '50';
+    vol.step = '1';
+    vol.addEventListener('input', () => calcCRI(vol));
+    tdVol.appendChild(vol);
+
+    // target
+    const tdTarget = document.createElement('td');
+    const target = makeInput('c-target');
+    target.step = '0.01';
+    target.placeholder = '輸入';
+    target.addEventListener('input', () => calcCRI(target));
+    tdTarget.appendChild(target);
+
+    // unit
+    const tdUnit = document.createElement('td');
+    const unit = document.createElement('select');
+    unit.className = 'c-unit';
+    ['mcg/kg/hr', 'mcg/kg/min', 'mg/kg/hr'].forEach(u => {
+      unit.appendChild(new Option(u, u, false, info.unit === u));
+    });
+    if (!unit.value) unit.value = 'mcg/kg/hr';
+    unit.addEventListener('change', () => calcCRI(unit));
+    tdUnit.appendChild(unit);
+
+    // pump
+    const tdPump = document.createElement('td');
+    const pump = makeInput('c-pump');
+    pump.step = '0.1';
+    pump.placeholder = '輸入';
+    pump.addEventListener('input', () => calcCRI(pump));
+    tdPump.appendChild(pump);
+
+    // result
+    const tdResult = document.createElement('td');
+    tdResult.style.padding = '2px';
+    const panel = document.createElement('div');
+    panel.className = 'cri-result-panel';
+    panel.textContent = '等待輸入參數…';
+    tdResult.appendChild(panel);
+
+    // note
+    const tdNote = document.createElement('td');
+    const note = makeInput('c-note', 'text');
+    note.placeholder = '備註…';
+    tdNote.appendChild(note);
+
+    // delete
+    const tdDel = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'btn-del';
+    del.type = 'button';
+    del.textContent = '×';
+    del.addEventListener('click', () => tr.remove());
+    tdDel.appendChild(del);
+
+    tr.append(tdDrug, tdConc, tdWt, tdVol, tdTarget, tdUnit, tdPump, tdResult, tdNote, tdDel);
+    tbody.appendChild(tr);
+    selectElem.value = '';
+    calcCRI(vol);
+  };
+
+  window.calcCRI = function calcCRIV21(elem) {
+    const row = elem && elem.closest ? elem.closest('tr') : null;
+    if (!row) return;
+
+    const stockConc = parseFloat(row.querySelector('.c-conc')?.value);
+    const weight = parseFloat(byId('patient-weight')?.value);
+    const finalVol = parseFloat(row.querySelector('.c-vol')?.value);
+    const target = parseFloat(row.querySelector('.c-target')?.value);
+    const pump = parseFloat(row.querySelector('.c-pump')?.value);
+    const unit = row.querySelector('.c-unit')?.value;
+    const panel = row.querySelector('.cri-result-panel');
+    const wt = row.querySelector('.c-wt');
+
+    if (wt) wt.value = Number.isFinite(weight) ? String(weight) : '';
+    if (!panel) return;
+
+    panel.classList.remove('eg-v21-cri-error', 'eg-v21-cri-warn');
+    panel.replaceChildren();
+
+    const setMessage = (text, isError=false) => {
+      panel.textContent = text;
+      if (isError) panel.classList.add('eg-v21-cri-error');
+    };
+
+    if (
+      !Number.isFinite(stockConc) ||
+      !Number.isFinite(weight) ||
+      !Number.isFinite(finalVol) ||
+      !Number.isFinite(target) ||
+      !Number.isFinite(pump)
+    ) {
+      setMessage('請補齊：濃度、體重、總量、目標劑量與 Pump rate');
+      return;
+    }
+
+    if (weight <= 0 || stockConc <= 0 || finalVol <= 0 || pump <= 0 || target < 0) {
+      setMessage('輸入無效：體重、原液濃度、總量與 Pump rate 必須 > 0；目標劑量不得為負值。', true);
+      return;
+    }
+
+    // target -> mg/kg/hr
+    let targetMgKgHr;
+    if (unit === 'mcg/kg/hr') targetMgKgHr = target / 1000;
+    else if (unit === 'mcg/kg/min') targetMgKgHr = target * 60 / 1000;
+    else if (unit === 'mg/kg/hr') targetMgKgHr = target;
+    else {
+      setMessage('不支援的 CRI 單位。', true);
+      return;
+    }
+
+    const mgPerHr = targetMgKgHr * weight;
+    const finalConc = mgPerHr / pump;          // mg/mL
+    const totalMg = finalConc * finalVol;      // mg
+    const drawVol = totalMg / stockConc;       // mL
+    const diluentVol = finalVol - drawVol;     // mL
+
+    if (![mgPerHr, finalConc, totalMg, drawVol, diluentVol].every(Number.isFinite)) {
+      setMessage('計算結果無效，請確認所有輸入。', true);
+      return;
+    }
+
+    if (drawVol > finalVol || diluentVol < 0) {
+      setMessage(
+        `此配製條件不可成立：需抽藥 ${drawVol.toFixed(2)} mL，已超過最終總量 ${finalVol.toFixed(2)} mL。請調整 Pump rate、目標劑量或最終總量。`,
+        true
+      );
+      return;
+    }
+
+    // Closed-loop：由 final concentration × pump rate 重新回算，禁止直接抄 target。
+    const deliveredMgKgHr = (finalConc * pump) / weight;
+    let back;
+    if (unit === 'mcg/kg/hr') back = deliveredMgKgHr * 1000;
+    else if (unit === 'mcg/kg/min') back = deliveredMgKgHr * 1000 / 60;
+    else back = deliveredMgKgHr;
+
+    const rows = [
+      `每小時需要：${mgPerHr.toFixed(4)} mg/hr`,
+      `最終濃度：${finalConc.toFixed(4)} mg/mL`,
+      `抽藥：${drawVol.toFixed(2)} mL`,
+      `稀釋液：${diluentVol.toFixed(2)} mL`,
+      `Pump：${pump.toFixed(2)} mL/hr`,
+      `回算實際輸注：${back.toFixed(4)} ${unit}`
+    ];
+
+    rows.forEach((text, i) => {
+      const line = document.createElement(i === 2 ? 'strong' : 'span');
+      line.textContent = text;
+      panel.appendChild(line);
+    });
+
+    const note = document.createElement('span');
+    note.style.color = '#4a5568';
+    note.textContent = `配製前提：先移除等量稀釋液，再加入藥物，使最終總量維持 ${finalVol.toFixed(2)} mL。`;
+    panel.appendChild(note);
+  };
+
+  // ---------------------------------------------------------------------------
+  // 6. Bolus：完整名稱 identity、刪除立即同步 marker、使用 textContent 建列
+  // ---------------------------------------------------------------------------
+  function recordSlots() {
+    const out = [];
+    const count = typeof currentGlobalSlot === 'number' ? currentGlobalSlot : 0;
+    for (let i = 0; i < count; i++) {
+      const cell = byId(`row-time-${i}`);
+      const time = cell?.textContent?.trim();
+      if (!time || time === '-') continue;
+      out.push({
+        index: i,
+        time,
+        day: Number(cell.dataset.day || 0),
+        page: Math.floor(i / SLOTS_PER_PAGE) + 1,
+        local: i % SLOTS_PER_PAGE
+      });
+    }
+    return out;
+  }
+
+  function findSlot(time, day) {
+    const slots = recordSlots();
+    if (day !== undefined && day !== null && day !== '') {
+      const d = Number(day);
+      const exact = slots.find(s => s.time === time && s.day === d);
+      if (exact) return exact;
+    }
+    return slots.find(s => s.time === time) || null;
+  }
+
+  function createBolusRow(b) {
+    const tr = document.createElement('tr');
+    tr.dataset.day = String(Number(b.day || 0));
+
+    const fields = [b.dName, b.bTime, b.doseUnit, b.total, b.amt, b.route];
+    fields.forEach(value => {
+      const td = document.createElement('td');
+      td.contentEditable = 'true';
+      td.textContent = value == null ? '' : String(value);
+      tr.appendChild(td);
+    });
+
+    const tdDel = document.createElement('td');
+    tdDel.className = 'bolus-del-cell';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-bolus-del';
+    btn.title = '刪除這一列';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => deleteBolusRow(btn));
+    tdDel.appendChild(btn);
+    tr.appendChild(tdDel);
+    return tr;
+  }
+
+  function syncBolusMarkersFromTables() {
+    if (!Array.isArray(charts)) return;
+
+    charts.forEach(chart => {
+      chart.data.bolusNames = Array(SLOTS_PER_PAGE).fill('');
+      chart.data.datasets[8].data = Array(SLOTS_PER_PAGE).fill(null);
+    });
+
+    const namesBySlot = new Map();
+
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+      const tbody = byId(`bolus-tbody-${p}`);
+      if (!tbody) continue;
+
+      tbody.querySelectorAll('tr').forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if (tds.length < 6) return;
+
+        const name = tds[0].textContent.trim();
+        const time = tds[1].textContent.trim();
+        const day = Number(tr.dataset.day || 0);
+        const slot = findSlot(time, day);
+
+        tr.classList.toggle('eg-v21-unmatched', !slot);
+        tr.title = slot ? '' : '此給藥時間沒有對應的監測紀錄；本列已保留，但不建立圖表 marker。';
+
+        if (!slot || !name) return;
+
+        const key = slot.index;
+        const arr = namesBySlot.get(key) || [];
+        if (!arr.includes(name)) arr.push(name);   // 完整名稱 exact identity
+        namesBySlot.set(key, arr);
+      });
+    }
+
+    namesBySlot.forEach((arr, globalIndex) => {
+      const page = Math.floor(globalIndex / SLOTS_PER_PAGE);
+      const local = globalIndex % SLOTS_PER_PAGE;
+      const chart = charts[page];
+      if (!chart) return;
+      chart.data.bolusNames[local] = arr.join(' / ');
+      chart.data.datasets[8].data[local] = mapY(BOLUS_MARKER_Y);
+    });
+
+    charts.forEach(c => c.update());
+  }
+
+  window.deleteBolusRow = function deleteBolusRowV21(btn) {
+    const tr = btn.closest('tr');
+    if (!tr) return;
+    const name = tr.querySelector('td')?.textContent?.trim() || '(未填藥名)';
+    if (!confirm(`確定刪除這筆給藥紀錄嗎？\n\n${name}`)) return;
+
+    tr.remove();
+    syncBolusMarkersFromTables();  // 當場完成，不等下一次 addRecord
+    document.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  // ---------------------------------------------------------------------------
+  // 7. addRecord wrapper：
+  //    - duplicate minute 必須確認
+  //    - Anesthetic 組成 ISO/SEVO + %
+  //    - 保存 bolus 原始文字，避免原版 innerHTML 對 "<" 造成資料毀損
+  //    - unmatched bolus 不留在 page 1，改回原頁/目前操作頁，且不畫 marker
+  //    - 完成後再做跨午夜排序
+  // ---------------------------------------------------------------------------
+  const originalAddRecord = window.addRecord;
+
+  function snapshotBoluses(timeStr, activePage) {
+    const all = [];
+
+    // 已經進病歷的 bolus
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+      const tbody = byId(`bolus-tbody-${p}`);
+      if (!tbody) continue;
+      tbody.querySelectorAll('tr').forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if (tds.length < 6) return;
+        const vals = [...tds].slice(0, 6).map(td => td.textContent);
+        if (vals.every(v => !String(v).trim() || String(v).trim() === '-')) return;
+        all.push({
+          dName: vals[0],
+          bTime: vals[1],
+          doseUnit: vals[2],
+          total: vals[3],
+          amt: vals[4],
+          route: vals[5],
+          day: Number(tr.dataset.day || 0),
+          sourcePage: p
+        });
+      });
+    }
+
+    // 本次上方暫存 bolus
+    document.querySelectorAll('#tbody-intraop tr').forEach(row => {
+      const dName = row.querySelector('.r-drug')?.value || '';
+      let bTime = row.querySelector('.r-time')?.value || '';
+      if (!bTime) bTime = timeStr;
+      const dose = row.querySelector('.r-dose')?.value || '';
+      const unit = row.querySelector('.r-unit')?.value || '';
+      const total = row.querySelector('.r-total')?.value || '';
+      const amt = row.querySelector('.r-amt')?.value || '';
+      const route = row.querySelector('.r-route')?.value || '';
+      if (!dName.trim()) return;
+
+      const slot = findSlot(bTime, null);
+      all.push({
+        dName,
+        bTime,
+        doseUnit: `${dose} ${unit}`.trim(),
+        total,
+        amt: amt ? `${amt} ml` : '',
+        route,
+        day: slot ? slot.day : null,
+        sourcePage: slot ? slot.page : activePage
+      });
+    });
+
+    return all;
+  }
+
+  function snapshotTimeDays() {
+    const map = new Map();
+    recordSlots().forEach(s => map.set(s.time, s.day));
+    return map;
+  }
+
+  function inferNewDay(timeStr, existingDays) {
+    if (existingDays.has(timeStr)) return existingDays.get(timeStr);
+
+    const slots = recordSlots();
+    if (!slots.length) return 0;
+
+    slots.sort((a, b) => sortKey(a.day, a.time) - sortKey(b.day, b.time));
+    const last = slots[slots.length - 1];
+    const newMin = timeToMinutes(timeStr);
+    const lastMin = timeToMinutes(last.time);
+    if (newMin == null || lastMin == null) return last.day;
+
+    // 新時間比最後時間小，而且跨距 > 12h，才判定為隔日。
+    if (newMin < lastMin && (lastMin - newMin) > 720) return last.day + 1;
+    return last.day;
+  }
+
+  function collectCurrentRecords(dayMap, newTime, newDay) {
+    const rows = [];
+    const count = typeof currentGlobalSlot === 'number' ? currentGlobalSlot : 0;
+    const keys = ['anes','o2','spo2','etco2','peak','tv','rr','pulse','sysbp','diabp','meanbp','fluids','temp','cri'];
+
+    for (let i = 0; i < count; i++) {
+      const time = byId(`row-time-${i}`)?.textContent?.trim();
+      if (!time || time === '-') continue;
+      const r = { time };
+      keys.forEach(k => r[k] = byId(`row-${k}-${i}`)?.textContent ?? '');
+      r.day = dayMap.has(time) ? dayMap.get(time) : (time === newTime ? newDay : 0);
+      rows.push(r);
+    }
+    return rows;
+  }
+
+  function rewriteRecordsChronologically(records) {
+    records.sort((a, b) => sortKey(a.day, a.time) - sortKey(b.day, b.time));
+    currentGlobalSlot = records.length;
+
+    for (let i = 0; i < TOTAL_PAGES * SLOTS_PER_PAGE; i++) {
+      const topTime = byId(`row-time-${i}`);
+      const bottomTime = byId(`row-time-bottom-${i}`);
+      if (topTime) { topTime.textContent = ''; delete topTime.dataset.day; }
+      if (bottomTime) { bottomTime.textContent = ''; delete bottomTime.dataset.day; }
+
+      ['anes','o2','spo2','etco2','peak','tv','rr','pulse','sysbp','diabp','meanbp','fluids','temp','cri'].forEach(k => {
+        const el = byId(`row-${k}-${i}`);
+        if (el) el.textContent = '';
+      });
+
+      const p = Math.floor(i / SLOTS_PER_PAGE);
+      const local = i % SLOTS_PER_PAGE;
+      const chart = charts[p];
+      if (chart) {
+        for (let d = 0; d <= 8; d++) chart.data.datasets[d].data[local] = null;
+        chart.data.bolusNames[local] = '';
+      }
+    }
+
+    records.forEach((r, i) => {
+      const topTime = byId(`row-time-${i}`);
+      const bottomTime = byId(`row-time-bottom-${i}`);
+      topTime.textContent = r.time;
+      bottomTime.textContent = r.time;
+      topTime.dataset.day = String(r.day || 0);
+      bottomTime.dataset.day = String(r.day || 0);
+
+      ['anes','o2','spo2','etco2','peak','tv','rr','pulse','sysbp','diabp','meanbp','fluids','temp','cri'].forEach(k => {
+        byId(`row-${k}-${i}`).textContent = r[k] ?? '';
+      });
+
+      const page = Math.floor(i / SLOTS_PER_PAGE);
+      const local = i % SLOTS_PER_PAGE;
+      const chart = charts[page];
+      const num = (v) => (v === '-' || v === '' || v == null) ? null : Number(v);
+
+      chart.data.datasets[0].data[local] = mapY(num(r.pulse));
+      chart.data.datasets[1].data[local] = mapY(num(r.sysbp));
+      chart.data.datasets[2].data[local] = mapY(num(r.diabp));
+      chart.data.datasets[3].data[local] = mapY(num(r.meanbp));
+      chart.data.datasets[4].data[local] = mapY(num(r.spo2));
+      chart.data.datasets[5].data[local] = mapY(num(r.etco2));
+      chart.data.datasets[6].data[local] = mapY(num(r.rr));
+      chart.data.datasets[7].data[local] = mapY(num(r.temp));
+
+      if (typeof autoFitText === 'function') autoFitText(`row-cri-${i}`);
+    });
+
+    charts.forEach(c => c.update());
+  }
+
+  function rebuildBolusTables(boluses, fallbackPage, newRecordTime, newRecordDay) {
+    for (let p = 1; p <= TOTAL_PAGES; p++) {
+      const tbody = byId(`bolus-tbody-${p}`);
+      if (tbody) tbody.replaceChildren();
+    }
+
+    boluses.forEach(b => {
+      if (b.day == null && b.bTime === newRecordTime) b.day = newRecordDay;
+      const slot = findSlot(b.bTime, b.day);
+      const targetPage = slot ? slot.page : (b.sourcePage || fallbackPage || 1);
+      if (slot) b.day = slot.day;
+
+      const tbody = byId(`bolus-tbody-${targetPage}`);
+      if (!tbody) return;
+      const tr = createBolusRow(b);
+      if (!slot) {
+        tr.classList.add('eg-v21-unmatched');
+        tr.title = '此給藥時間沒有對應的監測紀錄；資料已保留，但不建立圖表 marker。';
+      }
+      tbody.appendChild(tr);
+    });
+
+    syncBolusMarkersFromTables();
+  }
+
+  window.addRecord = function addRecordV21() {
+    const timeStr = byId('record-time')?.value;
+    if (!timeStr) return originalAddRecord.apply(this, arguments);
+
+    const existingDays = snapshotTimeDays();
+    if (existingDays.has(timeStr)) {
+      const ok = confirm(`${timeStr} 已有監測紀錄。\n\n按「確定」更新原紀錄；按「取消」不做任何變更。`);
+      if (!ok) return;
+    }
+
+    const newDay = inferNewDay(timeStr, existingDays);
+    const currentSlots = recordSlots();
+    const activePage = currentSlots.length
+      ? currentSlots[currentSlots.length - 1].page
+      : 1;
+
+    const safeBoluses = snapshotBoluses(timeStr, activePage);
+
+    // 防止原版對「無對應監測時間的新 bolus」建立假的 monitoring record。
+    const temporarilyDetached = [];
+    document.querySelectorAll('#tbody-intraop tr').forEach(row => {
+      const t = row.querySelector('.r-time')?.value || timeStr;
+      const matchedNow = existingDays.has(t) || t === timeStr;
+      if (!matchedNow) {
+        temporarilyDetached.push(row);
+        row.remove();
+      }
+    });
+
+    // 原版 addRecord 只懂一個 anes 欄，暫時組成字串交給它。
+    const anes = byId('anes');
+    const agent = byId('anes-agent')?.value || 'ISO';
+    const conc = anes?.value || '';
+    const oldType = anes?.type || 'text';
+
+    try {
+      if (anes) {
+        anes.type = 'text';
+        anes.value = conc ? `${agent} ${conc}%` : '';
+      }
+      originalAddRecord.apply(this, arguments);
+    } finally {
+      if (anes) {
+        anes.type = oldType;
+        anes.value = '';
+      }
+      temporarilyDetached.forEach(row => byId('tbody-intraop')?.appendChild(row));
+    }
+
+    // 原版已清掉正常 intraop row；我們用呼叫前的安全快照重建病歷 bolus。
+    if (byId('tbody-intraop')) byId('tbody-intraop').replaceChildren();
+
+    const records = collectCurrentRecords(existingDays, timeStr, newDay);
+    rewriteRecordsChronologically(records);
+    rebuildBolusTables(safeBoluses, activePage, timeStr, newDay);
+
+    // 跳到本次時間所在頁
+    const slot = findSlot(timeStr, newDay);
+    if (slot && typeof switchPage === 'function') switchPage(slot.page);
+
+    document.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  // ---------------------------------------------------------------------------
+  // 8. v2 / v3 compatibility gate + manual JSON 改走 autosave serializer
+  // ---------------------------------------------------------------------------
+  function v2Message() {
+    return `這份病歷是 EverGreen v2 舊格式。\n\n為避免欄位靜默錯位，新版不會嘗試還原。\n請改用 ${FROZEN_READER} 開啟舊病歷。`;
+  }
+
+  function patchSerialization() {
+    if (!window.EGSave || !EGSave.config) {
+      warn('EGSave 尚未建立，稍後重試 compatibility patch。');
+      setTimeout(patchSerialization, 300);
+      return;
+    }
+    if (EGSave.config.__egV21Patched) return;
+    EGSave.config.__egV21Patched = true;
+
+    const originalSerialize = EGSave.config.serialize;
+    const originalDeserialize = EGSave.config.deserialize;
+
+    EGSave.config.serialize = () => {
+      const state = originalSerialize();
+      if (!state) return state;
+      state.__v = 3;
+      state.egPatchVersion = PATCH_VERSION;
+      state.recordDays = {};
+      recordSlots().forEach(s => { state.recordDays[s.index] = s.day; });
+      return state;
+    };
+
+    EGSave.config.deserialize = (state) => {
+      if (!state || Number(state.__v || 0) <= 2) {
+        alert(v2Message());
+        throw new Error('EG_V2_INCOMPATIBLE_USE_FROZEN_READER');
+      }
+      originalDeserialize(state);
+
+      if (state.recordDays) {
+        Object.entries(state.recordDays).forEach(([idx, day]) => {
+          const a = byId(`row-time-${idx}`);
+          const b = byId(`row-time-bottom-${idx}`);
+          if (a) a.dataset.day = String(day);
+          if (b) b.dataset.day = String(day);
+        });
+      }
+      setTimeout(syncBolusMarkersFromTables, 0);
+    };
+
+    // 手動 JSON：使用同一套 serializer，避免又出現兩套不同病歷格式。
+    window.saveToJSON = function saveToJSONV21() {
+      const state = EGSave.config.serialize();
+      if (!state) {
+        alert('表單尚未完成初始化，請稍後再試。');
+        return;
+      }
+
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+
+      const idValue = document.querySelector('.print-id-sync')?.textContent?.trim() || 'Unknown';
+      const dateValue = new Date().toISOString().slice(0, 10);
+      a.download = `Anesthesia_${idValue}_${dateValue}_v3.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+
+    window.loadFromJSON = function loadFromJSONV21(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const state = JSON.parse(reader.result);
+          if (Number(state.__v || 0) <= 2) {
+            alert(v2Message());
+            return;
+          }
+          EGSave.config.deserialize(state);
+          alert('病歷資料讀取成功！');
+        } catch (err) {
+          if (String(err?.message || err).includes('EG_V2_INCOMPATIBLE')) return;
+          console.error(err);
+          alert('檔案格式錯誤或讀取失敗。資料未套入表單。');
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 9. Shared-drive 可觀測性：只有 FileSystem writable.close() 成功後才計時
+  // ---------------------------------------------------------------------------
+  let lastDriveWriteAt = null;
+
+  function updateDriveFreshness() {
+    const bar = byId('eg-save-bar');
+    if (!bar) return;
+    let el = bar.querySelector('.eg-drive-time');
+    if (!el) {
+      el = document.createElement('span');
+      el.className = 'eg-drive-time';
+      bar.appendChild(el);
+    }
+
+    if (!lastDriveWriteAt) {
+      el.textContent = '';
+      el.classList.remove('is-stale');
+      return;
+    }
+
+    const ageSec = Math.floor((Date.now() - lastDriveWriteAt.getTime()) / 1000);
+    const hhmmss = lastDriveWriteAt.toLocaleTimeString('zh-TW', { hour12: false });
+    if (ageSec > 180) {
+      const m = Math.floor(ageSec / 60);
+      const s = ageSec % 60;
+      el.textContent = `⚠ 上次成功 ${hhmmss}（${m}:${String(s).padStart(2,'0')} 未更新）`;
+      el.classList.add('is-stale');
+    } else {
+      el.textContent = `成功 ${hhmmss}`;
+      el.classList.remove('is-stale');
+    }
+  }
+
+  function patchFileSystemClose() {
+    const Ctor = window.FileSystemWritableFileStream;
+    if (!Ctor?.prototype?.close || Ctor.prototype.close.__egV21Patched) return;
+
+    const originalClose = Ctor.prototype.close;
+    const wrapped = async function(...args) {
+      const result = await originalClose.apply(this, args);
+      // 能走到這裡代表 close() 已成功 resolve。
+      lastDriveWriteAt = new Date();
+      updateDriveFreshness();
+      return result;
+    };
+    wrapped.__egV21Patched = true;
+    Ctor.prototype.close = wrapped;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 10. 初始化
+  // ---------------------------------------------------------------------------
+  function initEarly() {
+    addPatchStyles();
+    replaceClinicianField('Anesthetist:');
+    replaceClinicianField('Surgeon:');
+    setupAnestheticAgent();
+    removeDrugDefaults();
+    setupCRIHeader();
+    patchSerialization();
+    patchFileSystemClose();
+
+    console.info(`[EverGreen] ${PATCH_VERSION} loaded`);
+    if (window.Chart?.version) {
+      console.info(`[EverGreen] Current Chart.js runtime: ${Chart.version}`);
+    }
+  }
+
+  function initAfterLoad() {
+    removeIncompleteDrugOptions();
+    // window.onload 原版會重新灌 drug selector，載入後再清一次。
+    removeDrugDefaults();
+    setInterval(updateDriveFreshness, 30000);
+
+    // 既有 bolus（例如 restore 後）重新建立 marker 關係。
+    setTimeout(syncBolusMarkersFromTables, 500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEarly, { once: true });
+  } else {
+    initEarly();
+  }
+  window.addEventListener('load', initAfterLoad, { once: true });
+
+})();
+</script>
+<!-- ===== /EVERGREEN v2.1 SAFETY + WORKFLOW PATCH ===== -->
+
 
 </body>
 </html>
