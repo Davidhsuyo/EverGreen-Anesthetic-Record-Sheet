@@ -2035,12 +2035,12 @@ function loadFromJSON(event) {
       const id = CONFIG.getRecordId();
       const snap = collect();
       const text = JSON.stringify({ finalizedAt: new Date().toISOString(), recordId: id, data: snap }, null, 2);
-      const name = `${nowStamp()}_${getCaseBaseFilename()}.json`;
+      const name = `${getCaseBaseFilename()}.json`;
 
       if (state.dirHandle && await drive.ensurePermission()) {
         await drive.writeFile(name, text);
         try {
-          await state.dirHandle.removeEntry(`進行中_${id}.json`);
+          await state.dirHandle.removeEntry(`進行中_${getCaseBaseFilename()}.json`);
         } catch (_) { /* 沒有進行中檔就算了 */ }
         return true;
       }
@@ -2186,7 +2186,9 @@ function loadFromJSON(event) {
           state.lastSavedAt = new Date(d.savedAt);
         } catch (err) {
           console.error('[EGSave] 還原失敗', err);
-          alert('草稿還原時發生錯誤，資料已保留在存檔中。\n請按 F12 開啟主控台，把紅字截圖回報。');
+          if (!String(err?.message || err).includes('EG_HEADER_SCHEMA_INCOMPATIBLE')) {
+            alert('草稿還原時發生錯誤，資料已保留在存檔中。\n請按 F12 開啟主控台，把紅字截圖回報。');
+          }
         }
       }
       else localStorage.removeItem(d.key);
@@ -2271,6 +2273,12 @@ function loadFromJSON(event) {
 
   const PATCH_VERSION = '2.1-safety-workflow-20260816';
   const FROZEN_READER = 'index-v2-frozen.html';
+  // Patient Header 改版（新增 Name / Reproductive Status，Species / Sex 改 select）
+  // 讓 .ucd-form-container 內的 form element 數量與順序改變，草稿裡舊版 __v=3
+  // 的 DOM-index inputs 會對不回新版欄位（例如舊 Species 值跑進新的 Name 欄位）。
+  // 用這個獨立於 __v 的 schema 版本號擋掉「舊 __v=3、新 header」的草稿，
+  // 寧可讓還原失敗跳出提示，也不要讓資料靜默跑錯欄位。
+  const HEADER_SCHEMA_VERSION = 2;
   const BOLUS_MARKER_Y = 280;
 
   const CLINICIANS = [
@@ -3139,6 +3147,10 @@ function loadFromJSON(event) {
     return `這份病歷是 EverGreen v2 舊格式。\n\n為避免欄位靜默錯位，新版不會嘗試還原。\n請改用 ${FROZEN_READER} 開啟舊病歷。`;
   }
 
+  function headerSchemaMessage() {
+    return `這份草稿是在 Patient Header 欄位改版（新增 Name / Reproductive Status，Species / Sex 改下拉選單）之前存的舊版本。\n\n因為欄位順序已經改變，直接還原會讓資料跑進錯的欄位而不會有任何提示，所以新版不會嘗試自動還原這份草稿。\n\n請人工開啟原始 JSON 檔案核對內容，或聯絡系統管理員協助搬移資料。`;
+  }
+
   function patchSerialization() {
     if (!window.EGSave || !EGSave.config) {
       warn('EGSave 尚未建立，稍後重試 compatibility patch。');
@@ -3159,6 +3171,7 @@ function loadFromJSON(event) {
       state.recordDays = {};
       recordSlots().forEach(s => { state.recordDays[s.index] = s.day; });
       state.patientFields = collectPatientFields();
+      state.headerSchema = HEADER_SCHEMA_VERSION;
       return state;
     };
 
@@ -3166,6 +3179,10 @@ function loadFromJSON(event) {
       if (!state || Number(state.__v || 0) <= 2) {
         alert(v2Message());
         throw new Error('EG_V2_INCOMPATIBLE_USE_FROZEN_READER');
+      }
+      if (Number(state.headerSchema || 1) < HEADER_SCHEMA_VERSION) {
+        alert(headerSchemaMessage());
+        throw new Error('EG_HEADER_SCHEMA_INCOMPATIBLE');
       }
       originalDeserialize(state);
 
@@ -3213,7 +3230,8 @@ function loadFromJSON(event) {
           EGSave.config.deserialize(state);
           alert('病歷資料讀取成功！');
         } catch (err) {
-          if (String(err?.message || err).includes('EG_V2_INCOMPATIBLE')) return;
+          const msg = String(err?.message || err);
+          if (msg.includes('EG_V2_INCOMPATIBLE') || msg.includes('EG_HEADER_SCHEMA_INCOMPATIBLE')) return;
           console.error(err);
           alert('檔案格式錯誤或讀取失敗。資料未套入表單。');
         } finally {
