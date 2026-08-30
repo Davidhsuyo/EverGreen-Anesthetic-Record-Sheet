@@ -2555,15 +2555,15 @@ function loadFromJSON(event) {
 
 </script>
 <!-- ===== EG-AUTOSAVE-END ===== -->
-<!-- ===== EVERGREEN v2.1 SAFETY + WORKFLOW PATCH =====
-貼在現行 index.html 最下面，位置：<!-- ===== EG-AUTOSAVE-END ===== --> 之後、</body> 之前
-版本：2026-08-16
+<!-- ===== EVERGREEN v2.2 MULTI-CLINICIAN + v2.1 SAFETY WORKFLOW PATCH =====
+位置：EG-AUTOSAVE-END 區塊之後、body 結尾之前
+版本：2026-08-30
 -->
-<script id="eg-v21-safety-workflow-patch">
+<script id="eg-v22-multi-clinician-patch">
 (() => {
   'use strict';
 
-  const PATCH_VERSION = '2.1-safety-workflow-20260816';
+  const PATCH_VERSION = '2.2-multi-clinician-20260830';
   const FROZEN_READER = 'index-v2-frozen.html';
   // Patient Header 改版（新增 Name / Reproductive Status，Species / Sex 改 select）
   // 讓 .ucd-form-container 內的 form element 數量與順序改變，草稿裡舊版 __v=3
@@ -2590,7 +2590,7 @@ function loadFromJSON(event) {
   };
 
   function warn(msg) {
-    console.warn('[EverGreen v2.1]', msg);
+    console.warn('[EverGreen v2.2]', msg);
   }
 
   function addPatchStyles() {
@@ -2623,17 +2623,136 @@ function loadFromJSON(event) {
       .eg-v21-cri-warn{color:#975a16!important;background:#fffaf0!important;border-color:#fbd38d!important}
       #eg-save-bar .eg-drive-time{color:#c8f4dd}
       #eg-save-bar .eg-drive-time.is-stale{color:#ff8a8a;font-weight:700}
-      @media print {.eg-v21-unmatched{outline:none!important}}
+      .header-grid{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+      .info-col{min-width:0}
+      .eg-clinician-line{align-items:flex-start!important;position:relative;min-width:0}
+      .eg-clinician-line>span{margin-top:7px}
+      .eg-clinician-compat-slot{display:none!important}
+      .eg-clinician-field{position:relative;flex:1;min-width:0}
+      .eg-clinician-chips{display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-width:0;padding:2px 0;border-bottom:1px solid #718096}
+      .eg-clinician-chip{display:inline-flex;align-items:center;max-width:100%;padding:3px 5px 3px 9px;border:1px solid #90cdf4;border-radius:999px;background:#ebf8ff;color:#2c5282;font-size:12px;font-weight:700;line-height:1.25}
+      .eg-clinician-chip-name{overflow-wrap:anywhere}
+      .eg-clinician-remove{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:3px;padding:0;border:0;border-radius:50%;background:transparent;color:#4a5568;font-size:15px;line-height:1;cursor:pointer}
+      .eg-clinician-remove:hover,.eg-clinician-remove:focus-visible{background:#bee3f8;color:#1a365d;outline:2px solid #2b6cb0;outline-offset:1px}
+      .eg-clinician-add{flex:0 0 auto;padding:3px 9px;border:1px dashed #718096;border-radius:999px;background:#fff;color:#2d3748;font-size:12px;font-weight:700;cursor:pointer}
+      .eg-clinician-add:hover,.eg-clinician-add:focus-visible{border-color:#2b6cb0;background:#ebf8ff;color:#2b6cb0;outline:2px solid #2b6cb0;outline-offset:1px}
+      .eg-clinician-empty{padding:4px 2px;color:#718096;font-size:12px;font-weight:400}
+      .eg-clinician-popover{position:absolute;z-index:1000;top:calc(100% + 5px);right:0;width:min(310px,calc(100vw - 32px));max-height:330px;overflow:auto;padding:10px;border:1px solid #a0aec0;border-radius:8px;background:#fff;box-shadow:0 10px 25px rgba(0,0,0,.2)}
+      .eg-clinician-popover[hidden]{display:none}
+      .eg-clinician-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+      .eg-clinician-option{display:flex;align-items:center;gap:7px;width:100%;min-width:0;padding:7px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#2d3748;font-size:13px;font-weight:700;text-align:left;cursor:pointer}
+      .eg-clinician-option:hover,.eg-clinician-option:focus-visible{border-color:#63b3ed;background:#ebf8ff;outline:2px solid #2b6cb0;outline-offset:1px}
+      .eg-clinician-option[aria-checked="true"]{border-color:#3182ce;background:#bee3f8;color:#1a365d}
+      .eg-clinician-check{flex:0 0 auto;width:17px;text-align:center}
+      .eg-clinician-done{display:block;width:100%;margin-top:9px;padding:7px;border:0;border-radius:5px;background:#2b6cb0;color:#fff;font-weight:700;cursor:pointer}
+      .eg-clinician-print-value{display:none;flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+      @media (max-width:720px){
+        .header-grid{grid-template-columns:minmax(0,1fr);gap:10px}
+        .center-title{order:-1}
+        .eg-clinician-options{grid-template-columns:minmax(0,1fr)}
+      }
+      @media print {
+        .eg-v21-unmatched{outline:none!important}
+        .eg-clinician-field{display:none!important}
+        .eg-clinician-print-value{display:block!important}
+        .eg-clinician-line>span{margin-top:0}
+      }
     `;
     document.head.appendChild(style);
   }
 
   // ---------------------------------------------------------------------------
-  // 1. Surgeon / Anesthetist：真正下拉式，但維持「一個欄位換一個欄位」
-  //    不新增第二個 input，避免再平白移動 DOM index。
-  //    「其他 / 自訂」使用 prompt，輸入後加入本次病例的 select option。
+  // 1. Surgeon / Anesthetist：chip/tag 多選。
+  //    保留一個隱藏 select 作為舊 DOM-index 存檔的相容槽，且不在 UI
+  //    裡新增 input/select/textarea，所以 header 後續欄位的 index 完全不變。
   // ---------------------------------------------------------------------------
-  function replaceClinicianField(labelText) {
+  function normalizeClinicianList(value) {
+    const values = Array.isArray(value) ? value : ((value === '' || value == null) ? [] : [value]);
+    const seen = new Set();
+    return values.reduce((result, item) => {
+      const name = String(item == null ? '' : item).trim();
+      if (!name || seen.has(name)) return result;
+      seen.add(name);
+      result.push(name);
+      return result;
+    }, []);
+  }
+
+  window.normalizeClinicianList = normalizeClinicianList;
+
+  const clinicianWidgets = {};
+
+  function closeClinicianPopover(widget) {
+    if (!widget) return;
+    widget.popover.hidden = true;
+    widget.addButton.setAttribute('aria-expanded', 'false');
+  }
+
+  function syncClinicianCompatSlot(widget) {
+    const first = widget.values[0] || '';
+    if (first && ![...widget.compat.options].some(option => option.value === first)) {
+      widget.compat.appendChild(new Option(first, first));
+    }
+    widget.compat.value = first;
+  }
+
+  function renderClinicianWidget(widget) {
+    widget.chips.replaceChildren();
+
+    if (!widget.values.length) {
+      const empty = document.createElement('span');
+      empty.className = 'eg-clinician-empty';
+      empty.textContent = '尚未選擇';
+      widget.chips.appendChild(empty);
+    }
+
+    widget.values.forEach(name => {
+      const chip = document.createElement('span');
+      chip.className = 'eg-clinician-chip';
+
+      const text = document.createElement('span');
+      text.className = 'eg-clinician-chip-name';
+      text.textContent = name;
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'eg-clinician-remove';
+      remove.setAttribute('aria-label', `移除 ${name}`);
+      remove.textContent = '×';
+      remove.addEventListener('click', () => {
+        setClinicianValues(widget.key, widget.values.filter(value => value !== name), true);
+      });
+
+      chip.append(text, remove);
+      widget.chips.appendChild(chip);
+    });
+
+    widget.chips.appendChild(widget.addButton);
+    widget.printValue.textContent = widget.values.join('、');
+    widget.optionButtons.forEach((button, name) => {
+      const selected = widget.values.includes(name);
+      button.setAttribute('aria-checked', String(selected));
+      button.querySelector('.eg-clinician-check').textContent = selected ? '☑' : '☐';
+    });
+    syncClinicianCompatSlot(widget);
+  }
+
+  function setClinicianValues(key, value, notify) {
+    const widget = clinicianWidgets[key];
+    if (!widget) return;
+    widget.values = normalizeClinicianList(value);
+    renderClinicianWidget(widget);
+    if (notify) {
+      widget.compat.dispatchEvent(new Event('input', { bubbles: true }));
+      widget.compat.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function getClinicianValues(key) {
+    return clinicianWidgets[key] ? [...clinicianWidgets[key].values] : [];
+  }
+
+  function replaceClinicianField(labelText, key) {
     const lines = [...document.querySelectorAll('.ucd-top-info .info-line')];
     const line = lines.find(el => {
       const s = el.querySelector('span');
@@ -2642,38 +2761,120 @@ function loadFromJSON(event) {
     if (!line) return;
 
     const old = line.querySelector('input, select');
-    if (!old || old.dataset.egV21Clinician === '1') return;
+    if (!old || clinicianWidgets[key]) return;
 
     const select = document.createElement('select');
-    select.dataset.egV21Clinician = '1';
+    select.dataset.egV22ClinicianCompat = key;
+    select.className = 'eg-clinician-compat-slot';
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
     select.setAttribute('aria-label', labelText.replace(':', ''));
     select.appendChild(new Option('', ''));
-
     CLINICIANS.forEach(name => select.appendChild(new Option(name, name)));
-    select.appendChild(new Option('其他 / 自訂…', '__CUSTOM__'));
 
     const oldValue = String(old.value || '').trim();
     if (oldValue && !CLINICIANS.includes(oldValue)) {
-      select.insertBefore(new Option(oldValue, oldValue), select.lastElementChild);
+      select.appendChild(new Option(oldValue, oldValue));
     }
     select.value = oldValue;
+    old.replaceWith(select);
 
-    select.addEventListener('change', () => {
-      if (select.value !== '__CUSTOM__') return;
-      const custom = prompt(`請輸入${labelText.replace(':', '')}姓名：`, '');
-      if (!custom || !custom.trim()) {
-        select.value = '';
-        return;
-      }
-      const value = custom.trim();
-      const option = new Option(value, value);
-      select.insertBefore(option, select.lastElementChild);
-      select.value = value;
-      select.dispatchEvent(new Event('input', { bubbles: true }));
+    line.classList.add('eg-clinician-line');
+    const field = document.createElement('div');
+    field.className = 'eg-clinician-field';
+
+    const chips = document.createElement('div');
+    chips.className = 'eg-clinician-chips';
+
+    const addButton = document.createElement('button');
+    addButton.type = 'button';
+    addButton.className = 'eg-clinician-add';
+    addButton.textContent = '+ 新增';
+    addButton.setAttribute('aria-haspopup', 'dialog');
+    addButton.setAttribute('aria-expanded', 'false');
+
+    const popover = document.createElement('div');
+    popover.className = 'eg-clinician-popover';
+    popover.hidden = true;
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', `選擇${labelText.replace(':', '')}`);
+
+    const options = document.createElement('div');
+    options.className = 'eg-clinician-options';
+    const optionButtons = new Map();
+
+    CLINICIANS.forEach(name => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'eg-clinician-option';
+      option.setAttribute('role', 'checkbox');
+      option.setAttribute('aria-checked', 'false');
+
+      const check = document.createElement('span');
+      check.className = 'eg-clinician-check';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = '☐';
+      const nameText = document.createElement('span');
+      nameText.textContent = name;
+      option.append(check, nameText);
+      option.addEventListener('click', () => {
+        const next = clinicianWidgets[key].values.includes(name)
+          ? clinicianWidgets[key].values.filter(value => value !== name)
+          : [...clinicianWidgets[key].values, name];
+        setClinicianValues(key, next, true);
+      });
+      optionButtons.set(name, option);
+      options.appendChild(option);
     });
 
-    old.replaceWith(select);
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'eg-clinician-done';
+    done.textContent = '完成';
+    done.addEventListener('click', () => {
+      closeClinicianPopover(clinicianWidgets[key]);
+      addButton.focus();
+    });
+
+    const printValue = document.createElement('span');
+    printValue.className = 'eg-clinician-print-value';
+
+    popover.append(options, done);
+    field.append(chips, popover);
+    line.append(field, printValue);
+
+    clinicianWidgets[key] = {
+      key, line, compat: select, field, chips, addButton, popover,
+      optionButtons, printValue, values: normalizeClinicianList(oldValue),
+    };
+
+    addButton.addEventListener('click', () => {
+      const widget = clinicianWidgets[key];
+      const opening = widget.popover.hidden;
+      Object.values(clinicianWidgets).forEach(closeClinicianPopover);
+      widget.popover.hidden = !opening;
+      widget.addButton.setAttribute('aria-expanded', String(opening));
+      if (opening) widget.popover.querySelector('.eg-clinician-option')?.focus();
+    });
+
+    renderClinicianWidget(clinicianWidgets[key]);
   }
+
+  document.addEventListener('click', (event) => {
+    Object.values(clinicianWidgets).forEach(widget => {
+      if (!widget.field.contains(event.target)) closeClinicianPopover(widget);
+    });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    Object.values(clinicianWidgets).forEach(widget => {
+      if (!widget.popover.hidden) {
+        closeClinicianPopover(widget);
+        widget.addButton.focus();
+      }
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // 1b. Patient Header：Name / Species / Sex / Reproductive Status / Date
@@ -3488,6 +3689,9 @@ function loadFromJSON(event) {
       state.recordDays = {};
       recordSlots().forEach(s => { state.recordDays[s.index] = s.day; });
       state.patientFields = collectPatientFields();
+      // v2.2 正式欄位：不把多人名單拼成字串，也不依賴 chip innerHTML。
+      state.anesthetists = getClinicianValues('anesthetists');
+      state.surgeons = getClinicianValues('surgeons');
       state.headerSchema = HEADER_SCHEMA_VERSION;
       return state;
     };
@@ -3504,6 +3708,16 @@ function loadFromJSON(event) {
         throw err;
       }
       originalDeserialize(state);
+
+      // 優先使用 v2.2 arrays；其次接受舊單值欄位；最後再從 v2.1
+      // DOM-index 相容槽讀回舊 select value。所有路徑只走同一個 normalize helper。
+      const hasOwn = (key) => Object.prototype.hasOwnProperty.call(state, key);
+      const anesthetistValue = hasOwn('anesthetists') ? state.anesthetists
+        : (hasOwn('anesthetist') ? state.anesthetist : clinicianWidgets.anesthetists?.compat.value);
+      const surgeonValue = hasOwn('surgeons') ? state.surgeons
+        : (hasOwn('surgeon') ? state.surgeon : clinicianWidgets.surgeons?.compat.value);
+      setClinicianValues('anesthetists', anesthetistValue, false);
+      setClinicianValues('surgeons', surgeonValue, false);
 
       if (state.recordDays) {
         Object.entries(state.recordDays).forEach(([idx, day]) => {
@@ -3623,8 +3837,8 @@ function loadFromJSON(event) {
   // ---------------------------------------------------------------------------
   function initEarly() {
     addPatchStyles();
-    replaceClinicianField('Anesthetist:');
-    replaceClinicianField('Surgeon:');
+    replaceClinicianField('Anesthetist:', 'anesthetists');
+    replaceClinicianField('Surgeon:', 'surgeons');
     autofillDateIfEmpty();
     setupAnestheticAgent();
     removeDrugDefaults();
@@ -3657,7 +3871,7 @@ function loadFromJSON(event) {
 
 })();
 </script>
-<!-- ===== /EVERGREEN v2.1 SAFETY + WORKFLOW PATCH ===== -->
+<!-- ===== /EVERGREEN v2.2 MULTI-CLINICIAN + v2.1 SAFETY WORKFLOW PATCH ===== -->
 
 
 </body>
