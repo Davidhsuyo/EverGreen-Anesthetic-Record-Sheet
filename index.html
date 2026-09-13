@@ -3815,7 +3815,13 @@ function loadFromJSON(event) {
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const state = JSON.parse(reader.result);
+          const parsed = JSON.parse(reader.result);
+          // 共用磁碟 drive.write()/writeFinal() 存的是 {savedAt/finalizedAt, recordId, data:{...}}，
+          // 實際病歷包在 data 裡；手動存檔 saveToJSON() 存的才是裸資料。兩種都要能讀，
+          // 否則定稿/進行中檔案的 __v 讀到 undefined 會被誤判成 v2 舊格式。
+          const state = (parsed && parsed.inputs === undefined && parsed.data && typeof parsed.data === 'object')
+            ? parsed.data
+            : parsed;
           if (Number(state.__v || 0) <= 2) {
             alert(v2Message());
             return;
