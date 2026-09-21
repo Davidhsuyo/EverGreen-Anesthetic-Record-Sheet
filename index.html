@@ -3878,6 +3878,38 @@ function loadFromJSON(event) {
     return rows;
   }
 
+  // 給藥當下不一定同時有 key 生理數值——臨床上常常是先給藥，生理數值晚一點或
+  // 早一點才補。之前的版本要求 bolus 的時間「剛好」對到某個已存在的生理監測
+  // slot 才會在圖表上畫 marker，對不到就只留在下方 Bolus 表格、圖表上完全看不到
+  // （多見 syncBolusMarkersFromTables 的 .eg-v21-unmatched 分支）。
+  // 這裡補回「舊版 addRecord()」原本就有、但 V21 為了避免多天病歷排序錯誤而拿掉的
+  // 機制：幫每個沒有對應生理紀錄的給藥時間，補一格「只有給藥、生理欄位留空」的
+  // 時間軸位置，讓它也能正確跟其他紀錄一起依時間（含跨日）排序、各自佔一個獨立
+  // 的 chart slot。生理數值全部留 '-'，不臆測任何數字。
+  function injectOrphanBolusRecords(records, boluses, existingDays) {
+    const maxSlots = TOTAL_PAGES * SLOTS_PER_PAGE;
+    const hasRecordAt = (time, day) => records.some(r => r.time === time && Number(r.day || 0) === Number(day || 0));
+    let skippedForCapacity = false;
+
+    boluses.forEach(b => {
+      const bTime = (b.bTime || '').trim();
+      if (!bTime) return;
+      let day = b.day;
+      if (day == null) day = inferNewDay(bTime, existingDays);
+      day = Number(day || 0);
+      if (hasRecordAt(bTime, day)) return;
+      if (records.length >= maxSlots) { skippedForCapacity = true; return; }
+
+      records.push({
+        time: bTime, day,
+        anes: '-', o2: '-', spo2: '-', etco2: '-', peak: '-', tv: '-', rr: '-',
+        pulse: '-', sysbp: '-', diabp: '-', meanbp: '-', fluids: '-', temp: '-', cri: '-'
+      });
+    });
+
+    return skippedForCapacity;
+  }
+
   function rewriteRecordsChronologically(records) {
     records.sort((a, b) => sortKey(a.day, a.time) - sortKey(b.day, b.time));
     currentGlobalSlot = records.length;
@@ -4012,8 +4044,18 @@ function loadFromJSON(event) {
     if (byId('tbody-intraop')) byId('tbody-intraop').replaceChildren();
 
     const records = collectCurrentRecords(existingDays, timeStr, newDay);
+    // 給沒有對應生理紀錄的給藥時間補一格獨立的時間軸位置（見上方 injectOrphanBolusRecords）。
+    const skippedForCapacity = injectOrphanBolusRecords(records, safeBoluses, existingDays);
+    // 補位後總筆數可能一次跨過不只一頁，原版的自動展頁邏輯只算得到「這次新增的
+    // 一筆」，這裡用最終筆數重新確保頁數足夠，避免補到還沒展開的頁面而看不到。
+    while (Math.floor((records.length - 1) / SLOTS_PER_PAGE) + 1 > maxVisiblePage && maxVisiblePage < TOTAL_PAGES) {
+      addNewPage(false);
+    }
     rewriteRecordsChronologically(records);
     rebuildBolusTables(safeBoluses, activePage, timeStr, newDay);
+    if (skippedForCapacity) {
+      alert('已達 240 格上限，部分沒有對應生理紀錄時間的給藥事件目前無法顯示在時間軸圖表上（給藥紀錄本身仍完整保留在下方表格）。');
+    }
 
     // 跳到本次時間所在頁
     const slot = findSlot(timeStr, newDay);
