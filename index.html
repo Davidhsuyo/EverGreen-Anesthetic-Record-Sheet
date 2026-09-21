@@ -279,7 +279,7 @@
                             <option value="__CUSTOM__">Other / Custom…</option>
                         </select>
                     </div>
-                    <div class="info-line"><span>Weight in Kg:</span><input type="number" id="patient-weight" style="width: 60px;" oninput="updateGlobalCalculations()"></div>
+                    <div class="info-line"><span>Actual BW (kg):</span><input type="number" id="patient-weight" style="width: 60px;" oninput="updateGlobalCalculations()"></div>
                     <div class="info-line"><span>Age:</span><input type="text"></div>
                     <div class="info-line"><span>Sex:</span>
                         <select id="patient-sex">
@@ -497,8 +497,9 @@
                                     <th style="width: 8%;">1 mL/hr<br>= N</th>
                                     <th style="width: 12%;">N 的單位</th>
                                     <th style="width: 8%;">目標劑量</th>
-                                    <th style="width: 20%;">配製結果</th>
+                                    <th style="width: 13%;">配製結果</th>
                                     <th style="width: 8%;">備註</th>
+                                    <th style="width: 9%;">體重基準</th>
                                     <th style="width: 3%;"></th>
                                 </tr>
                             </thead>
@@ -774,6 +775,7 @@ function buildMultiPageGrids() {
                             <th>Total (mg)</th>
                             <th>Amount</th>
                             <th>Route</th>
+                            <th>Dose Wt</th>
                         </tr>
                     </thead>
                     <tbody id="bolus-tbody-${p}">
@@ -2563,7 +2565,7 @@ function loadFromJSON(event) {
 (() => {
   'use strict';
 
-  const PATCH_VERSION = '2.2-multi-clinician-20260830';
+  const PATCH_VERSION = '2.3-dosing-weight-basis-20260921';
   const FROZEN_READER = 'index-v2-frozen.html';
   // Patient Header 改版（新增 Name / Reproductive Status，Species / Sex 改 select）
   // 讓 .ucd-form-container 內的 form element 數量與順序改變，草稿裡舊版 __v=3
@@ -2654,6 +2656,22 @@ function loadFromJSON(event) {
       .eg-clinician-custom-add:hover,.eg-clinician-custom-add:focus-visible{background:#2c5282;outline:2px solid #2b6cb0;outline-offset:1px}
       .eg-clinician-done{display:block;width:100%;margin-top:9px;padding:7px;border:0;border-radius:5px;background:#2b6cb0;color:#fff;font-weight:700;cursor:pointer}
       .eg-clinician-print-value{display:none;flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+      .eg-dosing-weight-input{display:inline-block;min-width:46px;min-height:17px;padding:2px 6px;margin-right:6px;border:1px solid #cbd5e0;border-radius:4px;background:#fff;font-weight:bold;font-size:14px;color:#2d3748;cursor:text}
+      .eg-dosing-weight-input:focus-visible{outline:2px solid #2b6cb0;outline-offset:1px;border-color:#2b6cb0}
+      .eg-dosing-weight-input:empty::before{content:attr(data-placeholder);color:#a0aec0;font-weight:normal}
+      .eg-dosing-weight-input.eg-wt-diff{background:#fffaf0;border-color:#ed8936;color:#c05621}
+      .eg-dosing-weight-input.eg-wt-inactive{opacity:.45}
+      .eg-wt-reset-btn{padding:1px 8px;border:1px solid #cbd5e0;border-radius:4px;background:#edf2f7;color:#4a5568;font-size:11px;font-weight:bold;cursor:pointer}
+      .eg-wt-reset-btn:hover,.eg-wt-reset-btn:focus-visible{background:#e2e8f0;outline:2px solid #2b6cb0;outline-offset:1px}
+      .eg-wt-basis-group{display:inline-flex;gap:4px;margin-right:6px}
+      .eg-wt-basis-btn{padding:2px 9px;border:1px solid #718096;border-radius:12px;background:#fff;color:#4a5568;font-size:11px;font-weight:bold;cursor:pointer}
+      .eg-wt-basis-btn.active{background:#2b6cb0;border-color:#2b6cb0;color:#fff}
+      .eg-wt-basis-btn:focus-visible{outline:2px solid #2b6cb0;outline-offset:1px}
+      .eg-dose-wt-badge{display:inline-block;margin-left:10px;padding:2px 8px;border-radius:10px;background:#fefcbf;color:#744210;font-size:11px;font-weight:bold;white-space:nowrap;vertical-align:middle}
+      .eg-cri-basis-wrap{display:flex;flex-direction:column;gap:2px}
+      .eg-cri-basis-wrap select.c-weight-basis{width:100%;font-size:10px;padding:1px}
+      .eg-cri-basis-wrap input.c-custom-weight{width:100%;font-size:10px;padding:1px}
+      .eg-bolus-weight-cell{color:#4a5568;font-size:10px;font-weight:bold;white-space:nowrap}
       @media (max-width:720px){
         .header-grid{grid-template-columns:minmax(0,1fr);gap:10px}
         .center-title{order:-1}
@@ -2664,6 +2682,7 @@ function loadFromJSON(event) {
         .eg-clinician-field{display:none!important}
         .eg-clinician-print-value{display:block!important}
         .eg-clinician-line>span{margin-top:0}
+        .eg-wt-reset-btn,.eg-wt-basis-group{display:none!important}
       }
     `;
     document.head.appendChild(style);
@@ -3044,13 +3063,222 @@ function loadFromJSON(event) {
   }
 
   // ---------------------------------------------------------------------------
+  // 3b. Dosing Weight / Weight Basis
+  //     Actual BW（病患真實體重，即既有 #patient-weight）與 Dosing BW（藥物計算用
+  //     體重）分離。Dosing BW 預設跟隨 Actual BW，使用者可獨立修改；一旦手動修改過
+  //     就不再自動跟隨（可按鈕重置）。Bolus/Plan 用單一全域 basis
+  //     （actual/dosing/custom）；每筆 CRI 各自有自己的 basis，預設 dosing。
+  //     UI 全部用 contenteditable/button 建，不新增 input/select/textarea 到
+  //     .ucd-form-container 的靜態區塊，DOM-index 存檔完全不受影響（沿用 1. 的作法）。
+  //     所有新資料改用具名欄位存讀（actualWeight/dosingWeight/weightBasis/
+  //     customWeight/dosingManual），舊病歷沒有這些欄位時 dosingWeight 直接等於
+  //     actualWeight、basis 預設 dosing——數值上與舊版行為完全相同。
+  // ---------------------------------------------------------------------------
+  const weightState = {
+    dosingWeight: null,   // number|null：手動設定的 Dosing BW；null = 跟隨 Actual BW
+    dosingManual: false,  // 使用者是否手動改過 Dosing BW
+    basis: 'dosing',      // Bolus/Plan 全域 weight basis：'actual' | 'dosing' | 'custom'
+    customWeight: null,   // number|null：Custom BW（Bolus/Plan 用）
+  };
+
+  function parseWt(v) {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function getActualWeight() {
+    return parseWt(byId('patient-weight')?.value);
+  }
+
+  function getDosingWeight() {
+    if (weightState.dosingManual && weightState.dosingWeight != null) return weightState.dosingWeight;
+    return getActualWeight();
+  }
+
+  function getCustomWeight() {
+    return weightState.customWeight;
+  }
+
+  function resolveWeightForBasis(basis) {
+    if (basis === 'actual') return getActualWeight();
+    if (basis === 'custom') return getCustomWeight();
+    return getDosingWeight();
+  }
+
+  function getBolusWeight() {
+    return resolveWeightForBasis(weightState.basis);
+  }
+
+  function basisLabel(basis) {
+    if (basis === 'actual') return 'Actual';
+    if (basis === 'custom') return 'Custom';
+    return 'Dosing';
+  }
+
+  function formatWt(n) {
+    return (n == null || !Number.isFinite(n)) ? '--' : n.toFixed(1);
+  }
+
+  let dosingWeightEl = null;
+  let customWeightEl = null;
+  const basisButtons = {};
+
+  function refreshDosingWeightDisplay() {
+    if (!dosingWeightEl) return;
+    const val = getDosingWeight();
+    dosingWeightEl.textContent = val == null ? '' : String(val);
+    const actual = getActualWeight();
+    dosingWeightEl.classList.toggle('eg-wt-diff', actual != null && val != null && Math.abs(actual - val) > 0.001);
+  }
+
+  function refreshBasisButtons() {
+    Object.entries(basisButtons).forEach(([basis, btn]) => {
+      const active = weightState.basis === basis;
+      btn.setAttribute('aria-pressed', String(active));
+      btn.classList.toggle('active', active);
+    });
+    if (customWeightEl) {
+      customWeightEl.classList.toggle('eg-wt-inactive', weightState.basis !== 'custom');
+    }
+  }
+
+  function updateDoseBadges() {
+    const wt = getBolusWeight();
+    const text = `Dose BW: ${formatWt(wt)} kg (${basisLabel(weightState.basis)})`;
+    document.querySelectorAll('.eg-dose-wt-badge').forEach(el => { el.textContent = text; });
+  }
+
+  function refreshWeightUI() {
+    refreshDosingWeightDisplay();
+    refreshBasisButtons();
+    updateDoseBadges();
+  }
+
+  function recalcAllDoses() {
+    if (typeof updateGlobalCalculations === 'function') updateGlobalCalculations();
+  }
+
+  function makeNumericContentEditable(el, onChange) {
+    el.contentEditable = 'true';
+    el.setAttribute('role', 'textbox');
+    el.setAttribute('inputmode', 'decimal');
+    el.tabIndex = 0;
+    el.addEventListener('input', () => {
+      const cleaned = el.textContent.replace(/[^0-9.]/g, '');
+      if (cleaned !== el.textContent) {
+        el.textContent = cleaned;
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      }
+      onChange(parseWt(el.textContent));
+    });
+  }
+
+  function setupDosingWeightUI() {
+    const actualInput = byId('patient-weight');
+    const actualLine = actualInput?.closest('.info-line');
+    if (!actualInput || !actualLine || byId('dosing-weight-display')) return;
+
+    actualInput.addEventListener('input', () => {
+      if (!weightState.dosingManual) refreshDosingWeightDisplay();
+      recalcAllDoses();
+      updateDoseBadges();
+    });
+
+    // Dosing BW（獨立於 Actual BW，預設跟隨，可手動覆蓋）
+    const dosingLine = document.createElement('div');
+    dosingLine.className = 'info-line eg-dosing-weight-line';
+    const dosingLabel = document.createElement('span');
+    dosingLabel.textContent = 'Dosing BW (kg):';
+    dosingWeightEl = document.createElement('span');
+    dosingWeightEl.id = 'dosing-weight-display';
+    dosingWeightEl.className = 'eg-dosing-weight-input';
+    dosingWeightEl.setAttribute('aria-label', 'Dosing Body Weight in Kg');
+    dosingWeightEl.setAttribute('data-placeholder', '--');
+    makeNumericContentEditable(dosingWeightEl, (val) => {
+      weightState.dosingManual = true;
+      weightState.dosingWeight = val;
+      refreshDosingWeightDisplay();
+      recalcAllDoses();
+      updateDoseBadges();
+    });
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'eg-wt-reset-btn';
+    resetBtn.title = '重置為 Actual BW';
+    resetBtn.textContent = '= Actual';
+    resetBtn.addEventListener('click', () => {
+      weightState.dosingManual = false;
+      weightState.dosingWeight = null;
+      refreshDosingWeightDisplay();
+      recalcAllDoses();
+      updateDoseBadges();
+    });
+    dosingLine.append(dosingLabel, dosingWeightEl, resetBtn);
+    actualLine.insertAdjacentElement('afterend', dosingLine);
+
+    // Weight basis 切換（Bolus/Plan 全域用；CRI 有自己每列的切換，見 5.）
+    const basisLine = document.createElement('div');
+    basisLine.className = 'info-line eg-wt-basis-line';
+    const basisLabelEl = document.createElement('span');
+    basisLabelEl.textContent = 'Bolus/Plan Basis:';
+    const basisGroup = document.createElement('div');
+    basisGroup.className = 'eg-wt-basis-group';
+    ['actual', 'dosing', 'custom'].forEach(basis => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'eg-wt-basis-btn';
+      btn.textContent = basisLabel(basis);
+      btn.setAttribute('aria-pressed', 'false');
+      btn.addEventListener('click', () => {
+        weightState.basis = basis;
+        refreshBasisButtons();
+        recalcAllDoses();
+        updateDoseBadges();
+      });
+      basisButtons[basis] = btn;
+      basisGroup.appendChild(btn);
+    });
+    customWeightEl = document.createElement('span');
+    customWeightEl.id = 'custom-weight-display';
+    customWeightEl.className = 'eg-dosing-weight-input eg-wt-inactive';
+    customWeightEl.setAttribute('aria-label', 'Custom Body Weight in Kg');
+    customWeightEl.setAttribute('data-placeholder', 'Custom kg');
+    makeNumericContentEditable(customWeightEl, (val) => {
+      weightState.customWeight = val;
+      if (weightState.basis === 'custom') { recalcAllDoses(); updateDoseBadges(); }
+    });
+    basisLine.append(basisLabelEl, basisGroup, customWeightEl);
+    dosingLine.insertAdjacentElement('afterend', basisLine);
+
+    // Dose BW 提示：算藥相關區域各放一個，避免誤以為還在用 Actual BW
+    const badgeTargets = [dosingLine, document.querySelector('.plan-header-global h3')];
+    document.querySelectorAll('.plan-block-header span').forEach(span => {
+      if (/針劑|Bolus|CRI/.test(span.textContent)) badgeTargets.push(span);
+    });
+    const seen = new Set();
+    badgeTargets.forEach(target => {
+      if (!target || seen.has(target)) return;
+      seen.add(target);
+      const badge = document.createElement('span');
+      badge.className = 'eg-dose-wt-badge';
+      target.insertAdjacentElement('afterend', badge);
+    });
+
+    refreshWeightUI();
+  }
+
+  // ---------------------------------------------------------------------------
   // 4. Regular dose validation
   // ---------------------------------------------------------------------------
   window.calcRegular = function calcRegularV21(elem) {
     const row = elem && elem.closest ? elem.closest('tr') : null;
     if (!row) return;
 
-    const weight = parseFloat(byId('patient-weight')?.value);
+    const weight = getBolusWeight();
     const dose = parseFloat(row.querySelector('.r-dose')?.value);
     const conc = parseFloat(row.querySelector('.r-conc')?.value);
     const unit = row.querySelector('.r-unit')?.value;
@@ -3102,16 +3330,17 @@ function loadFromJSON(event) {
     const tbody = byId('tbody-cri');
     const table = tbody && tbody.closest('table');
     const th = table ? table.querySelectorAll('thead th') : [];
-    if (th.length >= 10) {
+    if (th.length >= 11) {
       th[0].innerHTML = '藥物 (CRI)';
       th[1].innerHTML = '原液濃度<br>(mg/mL)';
-      th[2].innerHTML = '體重<br>(kg)';
+      th[2].innerHTML = '使用體重<br>(kg)';
       th[3].innerHTML = '最終總量<br>(mL)';
       th[4].innerHTML = '目標劑量';
       th[5].innerHTML = '目標單位';
       th[6].innerHTML = 'Pump rate<br>(mL/hr)';
       th[7].innerHTML = '配製 / 回算結果';
       th[8].innerHTML = '備註';
+      th[9].innerHTML = '體重基準';
     }
 
     const note = document.querySelector('.cri-note-box');
@@ -3119,6 +3348,39 @@ function loadFromJSON(event) {
       note.textContent =
         'CRI：請輸入「目標劑量」與「Pump rate」。系統依體重、原液濃度與最終總量計算配製量，並由最終濃度 × Pump rate 重新回算實際輸注劑量。配製結果以「最終總量 = 設定總量」為前提。';
     }
+  }
+
+  function buildCRIBasisCell(defaultBasis, attachListeners) {
+    const td = document.createElement('td');
+    const wrap = document.createElement('div');
+    wrap.className = 'eg-cri-basis-wrap';
+    const sel = document.createElement('select');
+    sel.className = 'c-weight-basis';
+    ['actual', 'dosing', 'custom'].forEach(b => {
+      sel.appendChild(new Option(basisLabel(b), b, b === defaultBasis, b === defaultBasis));
+    });
+    const cw = document.createElement('input');
+    cw.type = 'number';
+    cw.step = '0.1';
+    cw.placeholder = 'kg';
+    cw.className = 'c-custom-weight';
+    if (attachListeners) {
+      sel.addEventListener('change', () => calcCRI(sel));
+      cw.addEventListener('input', () => calcCRI(cw));
+    }
+    wrap.append(sel, cw);
+    td.appendChild(wrap);
+    return td;
+  }
+
+  function upgradeLegacyCRIRows() {
+    document.querySelectorAll('#tbody-cri tr').forEach(tr => {
+      if (tr.querySelector('.c-weight-basis')) return;
+      const delTd = tr.querySelector('.btn-del')?.closest('td');
+      const basisTd = buildCRIBasisCell('dosing', false);
+      if (delTd) tr.insertBefore(basisTd, delTd);
+      else tr.appendChild(basisTd);
+    });
   }
 
   window.addCRIToSection = function addCRIToSectionV21(selectElem) {
@@ -3218,6 +3480,9 @@ function loadFromJSON(event) {
     note.placeholder = '備註…';
     tdNote.appendChild(note);
 
+    // weight basis（此 CRI 用哪個體重：Actual/Dosing/Custom，預設 Dosing）
+    const tdBasis = buildCRIBasisCell('dosing', true);
+
     // delete
     const tdDel = document.createElement('td');
     const del = document.createElement('button');
@@ -3227,7 +3492,7 @@ function loadFromJSON(event) {
     del.addEventListener('click', () => tr.remove());
     tdDel.appendChild(del);
 
-    tr.append(tdDrug, tdConc, tdWt, tdVol, tdTarget, tdUnit, tdPump, tdResult, tdNote, tdDel);
+    tr.append(tdDrug, tdConc, tdWt, tdVol, tdTarget, tdUnit, tdPump, tdResult, tdNote, tdBasis, tdDel);
     tbody.appendChild(tr);
     selectElem.value = '';
     calcCRI(vol);
@@ -3253,6 +3518,8 @@ function loadFromJSON(event) {
       bind('.c-target', 'input');
       bind('.c-unit', 'change');
       bind('.c-pump', 'input');
+      bind('.c-weight-basis', 'change');
+      bind('.c-custom-weight', 'input');
       const del = tr.querySelector('.btn-del');
       if (del) del.addEventListener('click', () => tr.remove());
     });
@@ -3263,7 +3530,11 @@ function loadFromJSON(event) {
     if (!row) return;
 
     const stockConc = parseFloat(row.querySelector('.c-conc')?.value);
-    const weight = parseFloat(byId('patient-weight')?.value);
+    const rowBasis = row.querySelector('.c-weight-basis')?.value || 'dosing';
+    const rowCustomWt = parseWt(row.querySelector('.c-custom-weight')?.value);
+    const weight = rowBasis === 'actual' ? getActualWeight()
+      : rowBasis === 'custom' ? rowCustomWt
+      : getDosingWeight();
     const finalVol = parseFloat(row.querySelector('.c-vol')?.value);
     const target = parseFloat(row.querySelector('.c-target')?.value);
     const pump = parseFloat(row.querySelector('.c-pump')?.value);
@@ -3271,7 +3542,7 @@ function loadFromJSON(event) {
     const panel = row.querySelector('.cri-result-panel');
     const wt = row.querySelector('.c-wt');
 
-    if (wt) wt.value = Number.isFinite(weight) ? String(weight) : '';
+    if (wt) wt.value = Number.isFinite(weight) ? `${weight} (${basisLabel(rowBasis)})` : '';
     if (!panel) return;
 
     panel.classList.remove('eg-v21-cri-error', 'eg-v21-cri-warn');
@@ -3389,6 +3660,8 @@ function loadFromJSON(event) {
   function createBolusRow(b) {
     const tr = document.createElement('tr');
     tr.dataset.day = String(Number(b.day || 0));
+    tr.dataset.weightKg = (b.weightKg != null && b.weightKg !== '') ? String(b.weightKg) : '';
+    tr.dataset.weightBasis = b.weightBasis || '';
 
     const fields = [b.dName, b.bTime, b.doseUnit, b.total, b.amt, b.route];
     fields.forEach(value => {
@@ -3397,6 +3670,14 @@ function loadFromJSON(event) {
       td.textContent = value == null ? '' : String(value);
       tr.appendChild(td);
     });
+
+    // 給藥當下實際用來算劑量的體重快照，不可編輯——這是歷史紀錄，之後改
+    // Actual/Dosing/Custom BW 都不應該讓這一格跟著變。舊資料沒有這個值時留空。
+    const tdWt = document.createElement('td');
+    tdWt.className = 'eg-bolus-weight-cell';
+    const wtKg = parseWt(tr.dataset.weightKg);
+    tdWt.textContent = wtKg != null ? `${formatWt(wtKg)} kg (${basisLabel(tr.dataset.weightBasis || 'dosing')})` : '';
+    tr.appendChild(tdWt);
 
     const tdDel = document.createElement('td');
     tdDel.className = 'bolus-del-cell';
@@ -3458,6 +3739,23 @@ function loadFromJSON(event) {
     charts.forEach(c => c.update());
   }
 
+  // 舊病歷還原時，bolus-tbody 的 innerHTML 是還原前那個版本存的（沒有 Dose Wt
+  // 欄位），直接塞進新版 8 欄的表格會讓每列少一格、刪除鈕視覺位移。這裡把缺的
+  // 那格補上（內容留空，因為舊資料本來就沒有體重快照可顯示），純粹補版面，
+  // 不動任何既有欄位的文字內容。
+  function upgradeLegacyBolusRows() {
+    document.querySelectorAll('.bolus-record-table tbody tr').forEach(tr => {
+      if (tr.querySelector('.eg-bolus-weight-cell')) return;
+      const delTd = tr.querySelector('.bolus-del-cell');
+      const wtTd = document.createElement('td');
+      wtTd.className = 'eg-bolus-weight-cell';
+      const wtKg = parseWt(tr.dataset.weightKg);
+      wtTd.textContent = wtKg != null ? `${formatWt(wtKg)} kg (${basisLabel(tr.dataset.weightBasis || 'dosing')})` : '';
+      if (delTd) tr.insertBefore(wtTd, delTd);
+      else tr.appendChild(wtTd);
+    });
+  }
+
   window.deleteBolusRow = function deleteBolusRowV21(btn) {
     const tr = btn.closest('tr');
     if (!tr) return;
@@ -3499,7 +3797,11 @@ function loadFromJSON(event) {
           amt: vals[4],
           route: vals[5],
           day: Number(tr.dataset.day || 0),
-          sourcePage: p
+          sourcePage: p,
+          // 已經在病歷裡的 bolus：weight 快照必須原封不動照抄，不可重算，
+          // 否則之後改 Dosing BW 會把歷史給藥紀錄的體重悄悄改掉。
+          weightKg: tr.dataset.weightKg || '',
+          weightBasis: tr.dataset.weightBasis || ''
         });
       });
     }
@@ -3517,6 +3819,9 @@ function loadFromJSON(event) {
       if (!dName.trim()) return;
 
       const slot = findSlot(bTime, null);
+      // 本次剛新增的 bolus：在這裡（給藥當下）把目前實際用來算劑量的體重/basis
+      // 固定下來，之後這筆歷史紀錄就不再跟著 Actual/Dosing/Custom BW 變動。
+      const wtNow = getBolusWeight();
       all.push({
         dName,
         bTime,
@@ -3525,7 +3830,9 @@ function loadFromJSON(event) {
         amt: amt ? `${amt} ml` : '',
         route,
         day: slot ? slot.day : null,
-        sourcePage: slot ? slot.page : activePage
+        sourcePage: slot ? slot.page : activePage,
+        weightKg: wtNow != null ? wtNow : '',
+        weightBasis: weightState.basis
       });
     });
 
@@ -3750,6 +4057,13 @@ function loadFromJSON(event) {
       state.anesthetists = getClinicianValues('anesthetists');
       state.surgeons = getClinicianValues('surgeons');
       state.headerSchema = HEADER_SCHEMA_VERSION;
+      // Dosing weight / weight basis：具名欄位存讀，不佔用 .inputs 的 DOM-index
+      // 位置（見 3b.），舊版讀到這份資料時單純忽略這些多出來的欄位即可。
+      state.actualWeight = getActualWeight();
+      state.dosingWeight = getDosingWeight();
+      state.dosingManual = weightState.dosingManual;
+      state.weightBasis = weightState.basis;
+      state.customWeight = weightState.customWeight;
       return state;
     };
 
@@ -3785,9 +4099,29 @@ function loadFromJSON(event) {
         });
       }
       if (state.patientFields) applyPatientFields(state.patientFields);
+
+      // Dosing weight / weight basis：舊病歷沒有這些欄位時，dosingWeight 直接
+      // 等於剛還原好的 actualWeight、basis 預設 dosing——數值上與舊版「只有
+      // Actual BW」的行為完全相同，不會 crash，也不會讓舊紀錄的劑量跑掉。
+      const savedActual = hasOwn('actualWeight') ? parseWt(state.actualWeight) : getActualWeight();
+      weightState.dosingManual = hasOwn('dosingManual') ? !!state.dosingManual : false;
+      const savedDosing = hasOwn('dosingWeight') ? parseWt(state.dosingWeight) : null;
+      weightState.dosingWeight = weightState.dosingManual
+        ? (savedDosing != null ? savedDosing : savedActual)
+        : null;
+      const basisRaw = hasOwn('weightBasis') ? state.weightBasis : 'dosing';
+      weightState.basis = ['actual', 'dosing', 'custom'].includes(basisRaw) ? basisRaw : 'dosing';
+      weightState.customWeight = hasOwn('customWeight') ? parseWt(state.customWeight) : null;
+
       // tbody-cri 是整批 innerHTML 還原，動態綁定的 addEventListener 會遺失，
-      // 這裡重新接上，讓還原後的 CRI 列仍可正常重新計算 / 刪除。
+      // 這裡重新接上，讓還原後的 CRI 列仍可正常重新計算 / 刪除。舊版存的 CRI 列
+      // 沒有「體重基準」欄位，先補上（預設 dosing）再重新綁定監聽器。
+      upgradeLegacyCRIRows();
       rebindCRIListeners();
+      // 舊版存的 bolus 歷史列沒有 Dose Wt 欄位，補上版面（內容留空，不臆測數值）。
+      upgradeLegacyBolusRows();
+      refreshWeightUI();
+      recalcAllDoses();
       setTimeout(syncBolusMarkersFromTables, 0);
     };
 
@@ -3904,6 +4238,7 @@ function loadFromJSON(event) {
     replaceClinicianField('Surgeon:', 'surgeons');
     autofillDateIfEmpty();
     setupAnestheticAgent();
+    setupDosingWeightUI();
     removeDrugDefaults();
     setupCRIHeader();
     patchSerialization();
