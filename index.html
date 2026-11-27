@@ -4537,16 +4537,92 @@ function loadFromJSON(event) {
   body.eg-sheet .eg-dosing-weight-input[aria-invalid="true"]:not([data-sheet-empty="true"]) {background:#faeee5;border-color:#a6694c;color:#8d4931}
 }
 </style>
+
+<style id="eg-senior-theme">
+@media screen {
+  body.eg-sheet #sheet-senior-toggle {border:1px solid #b5a28c;border-radius:3px;padding:7px 10px;font-size:13px;color:#574632;background:#fffdf6;min-height:34px}
+  body.eg-sheet #sheet-senior-toggle[aria-pressed="true"] {background:#786148;color:#fffdf6;border-color:#786148}
+  body.eg-sheet.sheet-senior {font-size:18px;--muted:#645648}
+  body.eg-sheet.sheet-senior :is(label,small,span,strong,button,input,select,textarea,[contenteditable],td,th,.info-line,.info-col,.section-divider,.plan-block-header,.comments-title,.time-event,.sheet-input-heading,.cri-note-box,.plan-notes,.cri-result-panel) {font-size:18px!important;line-height:1.5}
+  body.eg-sheet.sheet-senior :is(h1,h2,h3) {font-size:24px!important}
+  body.eg-sheet.sheet-senior :is(input,select,button,[contenteditable="true"]) {min-height:44px!important;height:auto;box-sizing:border-box}
+  body.eg-sheet.sheet-senior button {padding:8px 12px!important;white-space:normal}
+  body.eg-sheet.sheet-senior :is(input,select,textarea,[contenteditable="true"]) {font-size:20px!important;padding:8px!important}
+  body.eg-sheet.sheet-senior input[type="checkbox"] {width:24px;height:24px;min-height:24px!important;vertical-align:middle}
+  body.eg-sheet.sheet-senior .sheet-tools {gap:12px}
+  body.eg-sheet.sheet-senior .sheet-view-tools {flex-wrap:wrap}
+  body.eg-sheet.sheet-senior #eg-save-bar {font-size:18px!important;flex-wrap:wrap}
+  body.eg-sheet.sheet-senior .sheet-caseband {gap:8px 0;padding:12px 0}
+  body.eg-sheet.sheet-senior .sheet-case-actions {flex-wrap:wrap}
+  body.eg-sheet.sheet-senior .sheet-case-name {font-size:24px!important}
+  body.eg-sheet.sheet-senior .sheet-masthead {flex-wrap:wrap}
+  body.eg-sheet.sheet-senior .input-panel {grid-template-columns:190px minmax(0,1fr);gap:12px 18px;padding:16px}
+  body.eg-sheet.sheet-senior .sheet-main-vitals {grid-template-columns:repeat(6,minmax(0,1fr));gap:12px!important}
+  body.eg-sheet.sheet-senior .sheet-support-vitals {grid-template-columns:minmax(230px,1.4fr) minmax(100px,.6fr) minmax(140px,1fr);gap:12px!important}
+  body.eg-sheet.sheet-senior .input-group label {color:#62513f}
+  body.eg-sheet.sheet-senior .eg-v21-agent-row {grid-template-columns:1fr;gap:6px!important}
+  body.eg-sheet.sheet-senior .fluid-inputs select {flex-basis:120px;width:120px}
+  body.eg-sheet.sheet-senior .drug-selector {width:260px;max-width:100%}
+  body.eg-sheet.sheet-senior .plan-block-header {flex-wrap:wrap}
+  body.eg-sheet.sheet-senior .header-grid {grid-template-columns:1fr;gap:16px}
+  body.eg-sheet.sheet-senior .history-grid,body.eg-sheet.sheet-senior .pe-grid {grid-template-columns:1fr;gap:16px}
+  body.eg-sheet.sheet-senior .info-line {flex-wrap:wrap;gap:8px}
+  body.eg-sheet.sheet-senior .med-table {min-width:1100px}
+  body.eg-sheet.sheet-senior .page-view {min-width:1800px}
+  body.eg-sheet.sheet-senior .record-table td {height:34px;font-size:18px!important}
+  body.eg-sheet.sheet-senior .record-table td.row-header {width:130px;min-width:130px;max-width:130px;font-size:16px!important}
+  body.eg-sheet.sheet-senior .sheet-monitorbar,body.eg-sheet.sheet-senior .pagination-panel,body.eg-sheet.sheet-senior .horizontal-times-bar {flex-wrap:wrap;gap:10px}
+  body.eg-sheet.sheet-senior .bottom-split-panel {flex-direction:column}
+  body.eg-sheet.sheet-senior .bolus-section {border-left:0;padding-left:0;overflow-x:auto}
+  body.eg-sheet.sheet-senior .comments-box {line-height:32px;background:#fffdf6;min-height:100px}
+  body.eg-sheet.sheet-senior .sheet-rail-nav {width:88px}
+  body.eg-sheet.sheet-senior.sheet-rail {padding-left:110px}
+  body.eg-sheet.sheet-senior .sheet-rail-nav button {min-height:76px!important}
+  @media (max-width:1200px) {
+    body.eg-sheet.sheet-senior .input-panel {grid-template-columns:1fr}
+    body.eg-sheet.sheet-senior .sheet-times {display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));border:0;padding:0}
+    body.eg-sheet.sheet-senior .sheet-main-vitals {grid-template-columns:repeat(3,minmax(0,1fr))!important}
+    body.eg-sheet.sheet-senior .btn-panel {grid-column:1}
+  }
+  @media (max-width:760px) {
+    body.eg-sheet.sheet-senior {padding-left:0!important}
+    body.eg-sheet.sheet-senior .input-panel {padding:12px}
+    body.eg-sheet.sheet-senior .sheet-main-vitals,body.eg-sheet.sheet-senior .sheet-times {grid-template-columns:repeat(2,minmax(0,1fr))!important}
+    body.eg-sheet.sheet-senior .sheet-support-vitals {grid-template-columns:minmax(0,1fr)!important}
+    body.eg-sheet.sheet-senior .sheet-tools {align-items:flex-start}
+    body.eg-sheet.sheet-senior .horizontal-times-bar {grid-template-columns:1fr}
+    body.eg-sheet.sheet-senior .time-event {flex-wrap:wrap}
+    body.eg-sheet.sheet-senior .info-line>input,body.eg-sheet.sheet-senior .info-line>select {max-width:100%}
+    body.eg-sheet.sheet-senior .bolus-record-table {min-width:760px}
+  }
+}
+</style>
 <script id="eg-earth-ui">(() => {
   const byId=id=>document.getElementById(id);
   function init() {
     document.body.classList.add('eg-sheet','sheet-rail');
     const app=document.querySelector('.app-container');
     const masthead=document.createElement('header');masthead.className='sheet-masthead';
-    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
+    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-senior-toggle" aria-pressed="false">長輩模式：關</button><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
+    const seniorToggle=masthead.querySelector('#sheet-senior-toggle');
+    const seniorKey='eg-anes-ui-senior';
+    const setSenior=enabled=>{
+      document.body.classList.toggle('sheet-senior',enabled);
+      seniorToggle.setAttribute('aria-pressed',String(enabled));
+      seniorToggle.textContent='長輩模式：'+(enabled?'開':'關');
+    };
+    let seniorEnabled=false;
+    try { seniorEnabled=localStorage.getItem(seniorKey)==='on'; } catch {}
+    // Bind after the header has been inserted into the document.
     const caseband=document.createElement('section');caseband.className='sheet-caseband';caseband.setAttribute('aria-label','病患與體重');
     caseband.innerHTML='<strong class="sheet-case-name" id="sheet-name">—</strong><span class="sheet-case-id" id="sheet-id">—</span><span class="sheet-case-item" id="sheet-species">—</span><span class="sheet-case-item">Actual<strong id="sheet-actual">—</strong><small>kg</small></span><span class="sheet-case-item sheet-dose">Bolus/Plan<strong id="sheet-dose">—</strong><small id="sheet-basis">kg · Dosing</small></span><div class="sheet-case-actions"><button type="button" id="sheet-patient" aria-expanded="false">病患／術前資料</button><button type="button" id="sheet-plan" aria-expanded="false">麻醉計畫</button><button type="button" id="sheet-export">匯出</button></div>';
     app.prepend(masthead,caseband);
+    setSenior(seniorEnabled);
+    seniorToggle.addEventListener('click',()=>{
+      const enabled=!document.body.classList.contains('sheet-senior');
+      setSenior(enabled);
+      try { localStorage.setItem(seniorKey,enabled?'on':'off'); } catch {}
+    });
     const rail=document.createElement('nav');rail.id='sheet-rail-nav';rail.className='sheet-rail-nav';rail.setAttribute('aria-label','快速導覽');
     rail.innerHTML='<button type="button" data-section="monitor" aria-current="location"><small>01</small>監測</button><button type="button" data-section="patient"><small>02</small>病患</button><button type="button" data-section="plan"><small>03</small>計畫</button><button type="button" data-section="export"><small>04</small>匯出</button>';
     document.body.prepend(rail);
