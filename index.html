@@ -2565,7 +2565,7 @@ function loadFromJSON(event) {
 (() => {
   'use strict';
 
-  const PATCH_VERSION = '2.3-dosing-weight-basis-20260921';
+  const PATCH_VERSION = '2.3.1-weight-input-20261127';
   const FROZEN_READER = 'index-v2-frozen.html';
   // Patient Header 改版（新增 Name / Reproductive Status，Species / Sex 改 select）
   // 讓 .ucd-form-container 內的 form element 數量與順序改變，草稿裡舊版 __v=3
@@ -2661,6 +2661,7 @@ function loadFromJSON(event) {
       .eg-dosing-weight-input:empty::before{content:attr(data-placeholder);color:#a0aec0;font-weight:normal}
       .eg-dosing-weight-input.eg-wt-diff{background:#fffaf0;border-color:#ed8936;color:#c05621}
       .eg-dosing-weight-input.eg-wt-inactive{opacity:.45}
+      .eg-dosing-weight-input[aria-invalid="true"]{border-color:#c53030;background:#fff5f5}
       .eg-wt-reset-btn{padding:1px 8px;border:1px solid #cbd5e0;border-radius:4px;background:#edf2f7;color:#4a5568;font-size:11px;font-weight:bold;cursor:pointer}
       .eg-wt-reset-btn:hover,.eg-wt-reset-btn:focus-visible{background:#e2e8f0;outline:2px solid #2b6cb0;outline-offset:1px}
       .eg-wt-basis-group{display:inline-flex;gap:4px;margin-right:6px}
@@ -3075,14 +3076,17 @@ function loadFromJSON(event) {
   //     actualWeight、basis 預設 dosing——數值上與舊版行為完全相同。
   // ---------------------------------------------------------------------------
   const weightState = {
-    dosingWeight: null,   // number|null：手動設定的 Dosing BW；null = 跟隨 Actual BW
+    dosingWeight: null,   // number|null：手動體重；null = 未填或無效，是否跟隨由 dosingManual 決定
     dosingManual: false,  // 使用者是否手動改過 Dosing BW
     basis: 'dosing',      // Bolus/Plan 全域 weight basis：'actual' | 'dosing' | 'custom'
     customWeight: null,   // number|null：Custom BW（Bolus/Plan 用）
   };
 
   function parseWt(v) {
-    const n = parseFloat(v);
+    // 不把「3.2.2」或「3kg」的前半段默默當成有效體重。
+    const text = String(v ?? '').trim();
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) return null;
+    const n = Number(text);
     return Number.isFinite(n) ? n : null;
   }
 
@@ -3091,7 +3095,7 @@ function loadFromJSON(event) {
   }
 
   function getDosingWeight() {
-    if (weightState.dosingManual && weightState.dosingWeight != null) return weightState.dosingWeight;
+    if (weightState.dosingManual) return weightState.dosingWeight;
     return getActualWeight();
   }
 
@@ -3116,17 +3120,19 @@ function loadFromJSON(event) {
   }
 
   function formatWt(n) {
-    return (n == null || !Number.isFinite(n)) ? '--' : n.toFixed(1);
+    return (n == null || !Number.isFinite(n) || n <= 0) ? '--' : String(n);
   }
 
   let dosingWeightEl = null;
   let customWeightEl = null;
   const basisButtons = {};
 
-  function refreshDosingWeightDisplay() {
+  function refreshDosingWeightDisplay(preserveInput = false) {
     if (!dosingWeightEl) return;
     const val = getDosingWeight();
-    dosingWeightEl.textContent = val == null ? '' : String(val);
+    // 打字時只更新狀態，不覆寫文字，保留尾端小數點、前導零與游標位置。
+    if (!preserveInput) dosingWeightEl.textContent = val == null ? '' : String(val);
+    dosingWeightEl.setAttribute('aria-invalid', String(val == null || val <= 0));
     const actual = getActualWeight();
     dosingWeightEl.classList.toggle('eg-wt-diff', actual != null && val != null && Math.abs(actual - val) > 0.001);
   }
@@ -3150,6 +3156,10 @@ function loadFromJSON(event) {
 
   function refreshWeightUI() {
     refreshDosingWeightDisplay();
+    if (customWeightEl) {
+      customWeightEl.textContent = weightState.customWeight == null ? '' : String(weightState.customWeight);
+      customWeightEl.setAttribute('aria-invalid', String(weightState.customWeight == null || weightState.customWeight <= 0));
+    }
     refreshBasisButtons();
     updateDoseBadges();
   }
@@ -3159,21 +3169,20 @@ function loadFromJSON(event) {
   }
 
   function makeNumericContentEditable(el, onChange) {
-    el.contentEditable = 'true';
+    el.contentEditable = 'plaintext-only';
     el.setAttribute('role', 'textbox');
     el.setAttribute('inputmode', 'decimal');
     el.tabIndex = 0;
-    el.addEventListener('input', () => {
-      const cleaned = el.textContent.replace(/[^0-9.]/g, '');
-      if (cleaned !== el.textContent) {
-        el.textContent = cleaned;
-        const range = document.createRange();
-        const sel = window.getSelection();
-        range.selectNodeContents(el);
-        range.collapse(false);
-        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+    el.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        el.blur();
       }
-      onChange(parseWt(el.textContent));
+    });
+    el.addEventListener('input', () => {
+      const val = parseWt(el.textContent);
+      el.setAttribute('aria-invalid', String(val == null || val <= 0));
+      onChange(val);
     });
   }
 
@@ -3201,7 +3210,7 @@ function loadFromJSON(event) {
     makeNumericContentEditable(dosingWeightEl, (val) => {
       weightState.dosingManual = true;
       weightState.dosingWeight = val;
-      refreshDosingWeightDisplay();
+      refreshDosingWeightDisplay(true);
       recalcAllDoses();
       updateDoseBadges();
     });
@@ -4145,12 +4154,10 @@ function loadFromJSON(event) {
       // Dosing weight / weight basis：舊病歷沒有這些欄位時，dosingWeight 直接
       // 等於剛還原好的 actualWeight、basis 預設 dosing——數值上與舊版「只有
       // Actual BW」的行為完全相同，不會 crash，也不會讓舊紀錄的劑量跑掉。
-      const savedActual = hasOwn('actualWeight') ? parseWt(state.actualWeight) : getActualWeight();
       weightState.dosingManual = hasOwn('dosingManual') ? !!state.dosingManual : false;
       const savedDosing = hasOwn('dosingWeight') ? parseWt(state.dosingWeight) : null;
-      weightState.dosingWeight = weightState.dosingManual
-        ? (savedDosing != null ? savedDosing : savedActual)
-        : null;
+      // 手動清空也必須保留，不能在還原時偷偷回填 Actual BW。
+      weightState.dosingWeight = weightState.dosingManual ? savedDosing : null;
       const basisRaw = hasOwn('weightBasis') ? state.weightBasis : 'dosing';
       weightState.basis = ['actual', 'dosing', 'custom'].includes(basisRaw) ? basisRaw : 'dosing';
       weightState.customWeight = hasOwn('customWeight') ? parseWt(state.customWeight) : null;
