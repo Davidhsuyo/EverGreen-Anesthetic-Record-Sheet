@@ -4619,6 +4619,12 @@ function loadFromJSON(event) {
 </style>
 <script id="eg-earth-ui">(() => {
   const byId=id=>document.getElementById(id);
+  function seniorAgeQuip(age) {
+    const quips=["字還沒認全，就先要求字體加大，懂得爭取。", "作業寫完了嗎？這裡不是放大版平板遊戲。", "課本的小字都看得見，病歷的小字突然不行了？", "青春還沒用完，先來領大字版，規劃得很早。", "熬夜追劇看得清，輪到填表就要大字版。", "才剛開始被叫前輩，眼睛已經搶先辦退休。", "嘴上說自己還年輕，手倒是很誠實地按下去了。", "以前怕別人看手機，現在怕自己看不到手機。", "經驗越來越多，螢幕也越拿越遠。", "不是字變小，是手臂已經不夠長了。", "一眼就看出哪裡有問題，唯獨看不出這格寫什麼。", "帶過的人都能獨當一面了，這排小字還是不給面子。", "字體可以放大，叫你前輩的音量也不用那麼大。", "退休計畫還沒排好，大字版倒是先安排上了。", "你不是不懂操作，只是懶得跟小字浪費時間。", "別人還在研究快捷鍵，你一句話就有人幫忙按。", "什麼場面都見過了，今天居然被一排小字攔住。", "別人寫工作經歷，你可以直接寫這間醫院的歷史。", "你的資歷不用縮寫，這個螢幕大概也放不下。", "都快一個世紀了，還要自己填表，這班排得有點久。", "百歲還親自操作，年輕同事現在很難找藉口了。", "這不是長輩模式，是院史口述資料庫登入中。", "系統還在更新版本，你已經看過好幾代系統退休。", "這個年紀還來填表？排班的人最好出來解釋一下。"];
+    const band=Math.floor((age-1)/5);
+    if(!Number.isInteger(age)||band<0||band>=quips.length)return '請填 1–120 歲，別把病患年齡填進來。';
+    return `${band*5+1}–${band*5+5} 歲｜${quips[band]}`;
+  }
   function init() {
     document.body.classList.add('eg-sheet','sheet-rail');
     const app=document.querySelector('.app-container');
@@ -4662,7 +4668,7 @@ function loadFromJSON(event) {
     });
     seniorAge.addEventListener('input',()=>{
       const age=seniorAge.valueAsNumber;
-      quip.textContent=!seniorAge.value||!seniorAge.validity.valid?'請填 1–120 歲，別把病患年齡填進來。':age<40?'年紀還沒到，眼睛已經想退休了。':age<60?'資歷看得出來，小字看不出來。':'字體可以放大，氣勢不用收斂。';
+      quip.textContent=seniorAgeQuip(age);
     });
     byId('sheet-senior-cancel').addEventListener('click',()=>seniorDialog.close());
     byId('sheet-senior-form').addEventListener('submit',event=>{
