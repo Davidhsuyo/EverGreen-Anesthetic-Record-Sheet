@@ -4351,6 +4351,10 @@ function loadFromJSON(event) {
   body.eg-sheet #eg-save-bar.is-error .eg-dot {background:#b55b41}
   body.eg-sheet #eg-save-bar button {border:1px solid #d1cac1;border-radius:1px;background:#f3f1ee;color:#746657;font-size:9px;padding:3px 6px}
   body.eg-sheet #eg-save-bar .eg-drive-time.is-stale {color:#a55b3b}
+  body.eg-sheet.sheet-summary-hidden .sheet-caseband > :not(#sheet-summary-toggle) {display:none!important}
+  body.eg-sheet.sheet-summary-hidden .sheet-caseband {min-height:0;padding:4px 0;background:transparent}
+  body.eg-sheet #sheet-summary-toggle {margin-left:auto;flex-shrink:0;border:1px solid #b5a28c;border-radius:3px;padding:7px 10px;font-size:13px;color:#574632;background:#fffdf6;min-height:34px}
+  .sheet-view-tools {flex-wrap:wrap}
   .sheet-caseband {order:1;display:flex;align-items:center;gap:0;min-height:54px;border-bottom:1px solid #b9b0a6;background:#f4eee3;flex-wrap:wrap;padding:6px 0}
   .sheet-case-name {font-size:18px;font-weight:700;margin-right:12px;letter-spacing:.2px}
   .sheet-case-id {font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#807569;margin-right:16px}
@@ -4614,9 +4618,14 @@ function loadFromJSON(event) {
     let seniorEnabled=false;
     try { seniorEnabled=localStorage.getItem(seniorKey)==='on'; } catch {}
     // Bind after the header has been inserted into the document.
-    const caseband=document.createElement('section');caseband.className='sheet-caseband';caseband.setAttribute('aria-label','病患與體重');
-    caseband.innerHTML='<strong class="sheet-case-name" id="sheet-name">—</strong><span class="sheet-case-id" id="sheet-id">—</span><span class="sheet-case-item" id="sheet-species">—</span><span class="sheet-case-item">Actual<strong id="sheet-actual">—</strong><small>kg</small></span><span class="sheet-case-item sheet-dose">Bolus/Plan<strong id="sheet-dose">—</strong><small id="sheet-basis">kg · Dosing</small></span><div class="sheet-case-actions"><button type="button" id="sheet-patient" aria-expanded="false">病患／術前資料</button><button type="button" id="sheet-plan" aria-expanded="false">麻醉計畫</button><button type="button" id="sheet-export">匯出</button></div>';
+    const caseband=document.createElement('section');caseband.className='sheet-caseband';caseband.id='sheet-animal-summary';caseband.setAttribute('aria-label','病患與體重');
+    caseband.innerHTML='<strong class="sheet-case-name" id="sheet-name">—</strong><span class="sheet-case-id" id="sheet-id">—</span><span class="sheet-case-item" id="sheet-species">—</span><span class="sheet-case-item">Actual<strong id="sheet-actual">—</strong><small>kg</small></span><span class="sheet-case-item sheet-dose">Bolus/Plan<strong id="sheet-dose">—</strong><small id="sheet-basis">kg · Dosing</small></span><div class="sheet-case-actions"><button type="button" id="sheet-patient" aria-expanded="false">病患／術前資料</button><button type="button" id="sheet-plan" aria-expanded="false">麻醉計畫</button><button type="button" id="sheet-export">匯出</button></div><button type="button" id="sheet-summary-toggle" aria-expanded="true" aria-controls="sheet-animal-summary">收合動物資訊</button>';
     app.prepend(masthead,caseband);
+    byId('sheet-summary-toggle').addEventListener('click',()=>{
+      const hidden=document.body.classList.toggle('sheet-summary-hidden');
+      byId('sheet-summary-toggle').setAttribute('aria-expanded',String(!hidden));
+      byId('sheet-summary-toggle').textContent=hidden?'顯示動物資訊':'收合動物資訊';
+    });
     setSenior(seniorEnabled);
     seniorToggle.addEventListener('click',()=>{
       const enabled=!document.body.classList.contains('sheet-senior');
