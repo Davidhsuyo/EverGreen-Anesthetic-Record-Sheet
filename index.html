@@ -4601,19 +4601,34 @@ function loadFromJSON(event) {
   }
 }
 </style>
+
+<style id="eg-senior-dialog-theme">
+@media screen {
+  body.eg-sheet #sheet-senior-dialog {box-sizing:border-box;width:min(420px,calc(100% - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:26px;border:1px solid #b5a28c;border-radius:8px;background:#fbf7ef;color:#3d342b;box-shadow:0 20px 80px #35281d40;font-size:18px}
+  #sheet-senior-dialog::backdrop {background:#30271f88}
+  body.eg-sheet #sheet-senior-dialog h2 {font-size:23px;margin:0 0 22px;line-height:1.4}
+  body.eg-sheet #sheet-senior-dialog label {display:block;font-size:18px;font-weight:600;margin-bottom:8px}
+  body.eg-sheet #sheet-senior-age {box-sizing:border-box;width:100%;min-height:52px;padding:10px 12px;border:1px solid #b5a28c;background:#fffdf6;border-radius:4px;font-size:24px}
+  body.eg-sheet #sheet-senior-quip {font-size:16px;line-height:1.6;color:#705a43;min-height:52px;margin:14px 0 22px}
+  .sheet-senior-actions {display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+  body.eg-sheet .sheet-senior-actions button {min-height:46px;padding:10px 16px;border:1px solid #b5a28c;border-radius:4px;background:#fffdf6;color:#574632;font-size:18px}
+  body.eg-sheet .sheet-senior-actions button[type="submit"] {background:#786148;color:#fffdf6;border-color:#786148}
+}
+@media print {#sheet-senior-dialog {display:none!important}}
+</style>
 <script id="eg-earth-ui">(() => {
   const byId=id=>document.getElementById(id);
   function init() {
     document.body.classList.add('eg-sheet','sheet-rail');
     const app=document.querySelector('.app-container');
     const masthead=document.createElement('header');masthead.className='sheet-masthead';
-    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-senior-toggle" aria-pressed="false">長輩模式：關</button><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
+    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-senior-toggle" aria-pressed="false" aria-haspopup="dialog">🦯 長輩模式：關</button><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
     const seniorToggle=masthead.querySelector('#sheet-senior-toggle');
-    const seniorKey='eg-anes-ui-senior';
+    const seniorKey='eg-anes-ui-senior-v2';
     const setSenior=enabled=>{
       document.body.classList.toggle('sheet-senior',enabled);
       seniorToggle.setAttribute('aria-pressed',String(enabled));
-      seniorToggle.textContent='長輩模式：'+(enabled?'開':'關');
+      seniorToggle.textContent='🦯 長輩模式：'+(enabled?'開':'關');
     };
     let seniorEnabled=false;
     try { seniorEnabled=localStorage.getItem(seniorKey)==='on'; } catch {}
@@ -4627,10 +4642,34 @@ function loadFromJSON(event) {
       byId('sheet-summary-toggle').textContent=hidden?'顯示動物資訊':'收合動物資訊';
     });
     setSenior(seniorEnabled);
-    seniorToggle.addEventListener('click',()=>{
-      const enabled=!document.body.classList.contains('sheet-senior');
+    const seniorDialog=document.createElement('dialog');
+    seniorDialog.id='sheet-senior-dialog';
+    seniorDialog.setAttribute('aria-labelledby','sheet-senior-title');
+    seniorDialog.innerHTML='<form id="sheet-senior-form"><h2 id="sheet-senior-title">🦯 長輩模式申請處</h2><label for="sheet-senior-age">你的年齡（歲）</label><input id="sheet-senior-age" type="number" min="1" max="120" step="1" required inputmode="numeric" autocomplete="off" aria-describedby="sheet-senior-quip"><p id="sheet-senior-quip" aria-live="polite">請填實際年齡，年資跟心智年齡不算。</p><div class="sheet-senior-actions"><button type="button" id="sheet-senior-cancel">先不用</button><button type="submit">領取大字版</button></div></form>';
+    document.body.append(seniorDialog);
+    const seniorAge=byId('sheet-senior-age');
+    const quip=byId('sheet-senior-quip');
+    const persistSenior=enabled=>{
       setSenior(enabled);
       try { localStorage.setItem(seniorKey,enabled?'on':'off'); } catch {}
+    };
+    seniorToggle.addEventListener('click',()=>{
+      if(document.body.classList.contains('sheet-senior')) { persistSenior(false); return; }
+      seniorAge.value='';
+      quip.textContent='請填實際年齡，年資跟心智年齡不算。';
+      seniorDialog.showModal();
+      seniorAge.focus();
+    });
+    seniorAge.addEventListener('input',()=>{
+      const age=seniorAge.valueAsNumber;
+      quip.textContent=!seniorAge.value||!seniorAge.validity.valid?'請填 1–120 歲，別把病患年齡填進來。':age<40?'年紀還沒到，眼睛已經想退休了。':age<60?'資歷看得出來，小字看不出來。':'字體可以放大，氣勢不用收斂。';
+    });
+    byId('sheet-senior-cancel').addEventListener('click',()=>seniorDialog.close());
+    byId('sheet-senior-form').addEventListener('submit',event=>{
+      event.preventDefault();
+      if(!seniorAge.reportValidity())return;
+      persistSenior(true);
+      seniorDialog.close();
     });
     const rail=document.createElement('nav');rail.id='sheet-rail-nav';rail.className='sheet-rail-nav';rail.setAttribute('aria-label','快速導覽');
     rail.innerHTML='<button type="button" data-section="monitor" aria-current="location"><small>01</small>監測</button><button type="button" data-section="patient"><small>02</small>病患</button><button type="button" data-section="plan"><small>03</small>計畫</button><button type="button" data-section="export"><small>04</small>匯出</button>';
