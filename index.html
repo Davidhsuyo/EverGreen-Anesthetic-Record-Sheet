@@ -4352,6 +4352,7 @@ function loadFromJSON(event) {
   body.eg-sheet #eg-save-bar button {border:1px solid #d1cac1;border-radius:1px;background:#f3f1ee;color:#746657;font-size:9px;padding:3px 6px}
   body.eg-sheet #eg-save-bar .eg-drive-time.is-stale {color:#a55b3b}
   body.eg-sheet.sheet-summary-hidden .sheet-caseband > :not(#sheet-summary-toggle) {display:none!important}
+  body.eg-sheet.sheet-summary-hidden .ucd-top-info {display:none!important}
   body.eg-sheet.sheet-summary-hidden .sheet-caseband {min-height:0;padding:4px 0;background:transparent}
   body.eg-sheet #sheet-summary-toggle {margin-left:auto;flex-shrink:0;border:1px solid #b5a28c;border-radius:3px;padding:7px 10px;font-size:13px;color:#574632;background:#fffdf6;min-height:34px}
   .sheet-view-tools {flex-wrap:wrap}
@@ -4622,30 +4623,29 @@ function loadFromJSON(event) {
     document.body.classList.add('eg-sheet','sheet-rail');
     const app=document.querySelector('.app-container');
     const masthead=document.createElement('header');masthead.className='sheet-masthead';
-    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-senior-toggle" aria-pressed="false" aria-haspopup="dialog">🦯 長輩模式：關</button><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
+    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-senior-toggle" aria-pressed="false" aria-haspopup="dialog">長輩模式：關</button><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
     const seniorToggle=masthead.querySelector('#sheet-senior-toggle');
     const seniorKey='eg-anes-ui-senior-v2';
     const setSenior=enabled=>{
       document.body.classList.toggle('sheet-senior',enabled);
       seniorToggle.setAttribute('aria-pressed',String(enabled));
-      seniorToggle.textContent='🦯 長輩模式：'+(enabled?'開':'關');
+      seniorToggle.textContent='長輩模式：'+(enabled?'開':'關');
     };
     let seniorEnabled=false;
     try { seniorEnabled=localStorage.getItem(seniorKey)==='on'; } catch {}
     // Bind after the header has been inserted into the document.
     const caseband=document.createElement('section');caseband.className='sheet-caseband';caseband.id='sheet-animal-summary';caseband.setAttribute('aria-label','病患與體重');
-    caseband.innerHTML='<strong class="sheet-case-name" id="sheet-name">—</strong><span class="sheet-case-id" id="sheet-id">—</span><span class="sheet-case-item" id="sheet-species">—</span><span class="sheet-case-item">Actual<strong id="sheet-actual">—</strong><small>kg</small></span><span class="sheet-case-item sheet-dose">Bolus/Plan<strong id="sheet-dose">—</strong><small id="sheet-basis">kg · Dosing</small></span><div class="sheet-case-actions"><button type="button" id="sheet-patient" aria-expanded="false">病患／術前資料</button><button type="button" id="sheet-plan" aria-expanded="false">麻醉計畫</button><button type="button" id="sheet-export">匯出</button></div><button type="button" id="sheet-summary-toggle" aria-expanded="true" aria-controls="sheet-animal-summary">收合動物資訊</button>';
+    caseband.innerHTML='<strong class="sheet-case-name" id="sheet-name">—</strong><span class="sheet-case-id" id="sheet-id">—</span><span class="sheet-case-item" id="sheet-species">—</span><span class="sheet-case-item">Actual<strong id="sheet-actual">—</strong><small>kg</small></span><span class="sheet-case-item sheet-dose">Bolus/Plan<strong id="sheet-dose">—</strong><small id="sheet-basis">kg · Dosing</small></span><div class="sheet-case-actions"><button type="button" id="sheet-patient" aria-expanded="false">病患／術前資料</button><button type="button" id="sheet-plan" aria-expanded="false">麻醉計畫</button><button type="button" id="sheet-export">匯出</button></div><button type="button" id="sheet-summary-toggle" aria-expanded="true" aria-controls="sheet-animal-summary sheet-patient-details">收合動物資訊</button>';
     app.prepend(masthead,caseband);
+    document.querySelector('.ucd-top-info').id='sheet-patient-details';
     byId('sheet-summary-toggle').addEventListener('click',()=>{
-      const hidden=document.body.classList.toggle('sheet-summary-hidden');
-      byId('sheet-summary-toggle').setAttribute('aria-expanded',String(!hidden));
-      byId('sheet-summary-toggle').textContent=hidden?'顯示動物資訊':'收合動物資訊';
+      setAnimalVisible(document.body.classList.contains('sheet-summary-hidden'));
     });
     setSenior(seniorEnabled);
     const seniorDialog=document.createElement('dialog');
     seniorDialog.id='sheet-senior-dialog';
     seniorDialog.setAttribute('aria-labelledby','sheet-senior-title');
-    seniorDialog.innerHTML='<form id="sheet-senior-form"><h2 id="sheet-senior-title">🦯 長輩模式申請處</h2><label for="sheet-senior-age">你的年齡（歲）</label><input id="sheet-senior-age" type="number" min="1" max="120" step="1" required inputmode="numeric" autocomplete="off" aria-describedby="sheet-senior-quip"><p id="sheet-senior-quip" aria-live="polite">請填實際年齡，年資跟心智年齡不算。</p><div class="sheet-senior-actions"><button type="button" id="sheet-senior-cancel">先不用</button><button type="submit">領取大字版</button></div></form>';
+    seniorDialog.innerHTML='<form id="sheet-senior-form"><h2 id="sheet-senior-title">長輩模式申請處</h2><label for="sheet-senior-age">你的年齡（歲）</label><input id="sheet-senior-age" type="number" min="1" max="120" step="1" required inputmode="numeric" autocomplete="off" aria-describedby="sheet-senior-quip"><p id="sheet-senior-quip" aria-live="polite">請填實際年齡，年資跟心智年齡不算。</p><div class="sheet-senior-actions"><button type="button" id="sheet-senior-cancel">先不用</button><button type="submit">領取大字版</button></div></form>';
     document.body.append(seniorDialog);
     const seniorAge=byId('sheet-senior-age');
     const quip=byId('sheet-senior-quip');
@@ -4683,7 +4683,7 @@ function loadFromJSON(event) {
       rail.querySelectorAll('button').forEach(b=>b.removeAttribute('aria-current'));button.setAttribute('aria-current','location');
       const target=button.dataset.section;
       if(target==='patient'){
-        if(!document.body.classList.contains('sheet-patient-open'))toggle('sheet-patient','sheet-patient-open');
+        setAnimalVisible(true);
         document.querySelector('.ucd-top-info').scrollIntoView({behavior:'smooth',block:'start'});
       }else if(target==='plan'){
         if(!document.body.classList.contains('sheet-plan-open'))toggle('sheet-plan','sheet-plan-open');
@@ -4707,6 +4707,13 @@ function loadFromJSON(event) {
     document.addEventListener('input',update);document.addEventListener('change',update);document.addEventListener('click',update);
     new MutationObserver(update).observe(byId('grids-wrapper'),{subtree:true,childList:true,characterData:true});
     ready();
+  }
+  function setAnimalVisible(open) {
+    document.body.classList.toggle('sheet-summary-hidden',!open);
+    document.body.classList.toggle('sheet-patient-open',open);
+    byId('sheet-summary-toggle').setAttribute('aria-expanded',String(open));
+    byId('sheet-summary-toggle').textContent=open?'收合動物資訊':'顯示動物資訊';
+    byId('sheet-patient').setAttribute('aria-expanded',String(open));
   }
   function toggle(id,cls) {const open=document.body.classList.toggle(cls);byId(id).setAttribute('aria-expanded',String(open));}
   function refresh() {
