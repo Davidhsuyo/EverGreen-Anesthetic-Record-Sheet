@@ -4321,5 +4321,294 @@ function loadFromJSON(event) {
 <!-- ===== /EVERGREEN v2.2 MULTI-CLINICIAN + v2.1 SAFETY WORKFLOW PATCH ===== -->
 
 
+<style id="eg-earth-theme">@media screen {
+  body.eg-sheet {
+    --ink:#3d342b;--muted:#807466;--rule:#c6bbab;--green:#796247;--paper:#fbf7ef;
+    background:#ddd7cd;margin:0;padding:20px 24px 42px;color:var(--ink);
+    font:13px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  body.eg-sheet .app-container {display:flex;flex-direction:column;gap:0;max-width:1580px;margin:auto;background:var(--paper);padding:0 20px 16px;border:1px solid #cec9c4;box-shadow:0 2px 12px #372f2508}
+  body.eg-sheet .ucd-form-container {display:contents}
+  body.eg-sheet button,body.eg-sheet input,body.eg-sheet select,body.eg-sheet textarea {font:inherit}
+  body.eg-sheet button {cursor:pointer}
+  body.eg-sheet :is(input,select,textarea,[contenteditable]):focus-visible {outline:2px solid #7e7060!important;outline-offset:1px;background:#fffef8!important}
+  .sheet-masthead {order:0;min-height:69px;display:flex;align-items:center;gap:24px;border-bottom:2px solid #796247;padding:10px 0}
+  .sheet-wordmark {border-right:1px solid #c5bfb8;padding-right:24px;line-height:1.1;white-space:nowrap}
+  .sheet-wordmark strong {font:italic 700 24px Georgia,"Times New Roman",serif;letter-spacing:-.8px;color:#66513c}
+  .sheet-wordmark small {display:block;font-size:10px;letter-spacing:1.5px;color:#746a5e;margin-top:5px}
+  .sheet-title h1 {font-size:20px;font-weight:700;letter-spacing:2px;margin:0 0 5px}
+  .sheet-title small {font-size:9px;letter-spacing:1.6px;color:#80776c}
+  .sheet-tools {margin-left:auto;display:flex;align-items:flex-end;flex-direction:column;gap:8px}
+  .sheet-view-tools {display:flex;align-items:center;gap:7px;font-size:10px;color:#7c6c4b}
+  .sheet-view-tools span {border:1px solid #c7b68b;padding:3px 6px;font-size:9px;background:#f8f1dd}
+  .sheet-view-tools button {background:none;border:0;border-bottom:1px solid #bcb6b0;padding:1px 0;color:#766b5e;font-size:10px;margin-left:5px}
+  body.eg-sheet #eg-save-bar {position:static!important;box-shadow:none!important;border:0!important;background:none!important;padding:0!important;font:10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;letter-spacing:0!important;color:#695c4e!important;gap:6px!important}
+  body.eg-sheet #eg-save-bar .eg-label {font-size:9px;color:#8b8074}
+  body.eg-sheet #eg-save-bar .eg-sep {color:#c4bbb1}
+  body.eg-sheet #eg-save-bar .eg-dot {width:5px;height:5px;background:#94826d;box-shadow:none}
+  body.eg-sheet #eg-save-bar.is-dirty .eg-dot {background:#b28c49}
+  body.eg-sheet #eg-save-bar.is-error .eg-dot {background:#b55b41}
+  body.eg-sheet #eg-save-bar button {border:1px solid #d1cac1;border-radius:1px;background:#f3f1ee;color:#746657;font-size:9px;padding:3px 6px}
+  body.eg-sheet #eg-save-bar .eg-drive-time.is-stale {color:#a55b3b}
+  .sheet-caseband {order:1;display:flex;align-items:center;gap:0;min-height:54px;border-bottom:1px solid #b9b0a6;background:#f4eee3;flex-wrap:wrap;padding:6px 0}
+  .sheet-case-name {font-size:18px;font-weight:700;margin-right:12px;letter-spacing:.2px}
+  .sheet-case-id {font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#807569;margin-right:16px}
+  .sheet-case-item {font-size:11px;border-left:1px solid #d1c8be;padding:0 13px;color:#83796d;white-space:nowrap;line-height:25px}
+  .sheet-case-item strong {font:700 14px ui-monospace,SFMono-Regular,Consolas,monospace;color:#453b2f;margin-left:7px}
+  .sheet-case-item small {font-size:10px;color:#77695a;margin-left:4px}
+  .sheet-case-item.sheet-dose {color:#7c6438}
+  .sheet-case-item.sheet-dose strong {color:#775b2e}
+  .sheet-case-actions {margin-left:auto;display:flex;gap:5px}
+  .sheet-case-actions button {border:1px solid #c6bbaf;background:#fffdf6;border-radius:1px;padding:5px 9px;font-size:10px;color:#5e5040}
+  .sheet-case-actions button[aria-expanded="true"] {color:#fffdf5;background:#665745;border-color:#665745}
+  body.eg-sheet .ucd-top-info {order:2;display:none;border:1px solid #c6bbae;border-top:0;padding:15px 16px;background:#f9f7f5;margin-bottom:0}
+  body.eg-sheet.sheet-patient-open .ucd-top-info {display:block}
+  body.eg-sheet .plan-container {order:3;display:none;margin-bottom:0;border:1px solid #c6bbae;border-top:0;padding:13px 16px;background:#f9f7f5}
+  body.eg-sheet.sheet-plan-open .plan-container {display:block}
+  body.eg-sheet .header-grid {grid-template-columns:1fr 1fr;gap:30px}
+  body.eg-sheet .center-title {display:none}
+  body.eg-sheet .info-col {font-size:11px;font-weight:500;gap:6px}
+  body.eg-sheet .info-line {gap:5px;align-items:center;min-width:0}
+  body.eg-sheet .info-line>span:first-child {font-size:11px;color:#77695a}
+  body.eg-sheet .info-line input,body.eg-sheet .info-line select {min-width:0;background:#fffef7;border:1px solid #d2c8bd;border-radius:1px;padding:5px;font-size:13px;min-height:29px;color:#4a3f32;font-weight:500}
+  body.eg-sheet .eg-dosing-weight-input {min-width:70px;min-height:28px;background:#fffdf2;border:1px solid #cbc0b3;border-radius:1px;font:600 13px ui-monospace,SFMono-Regular,Consolas,monospace;padding:5px 7px}
+  body.eg-sheet .eg-dosing-weight-input[data-sheet-empty="true"] {border-color:#d2c8bd!important;background:#fffef7!important}
+  body.eg-sheet .eg-wt-reset-btn {font-size:9px;border-radius:1px;color:#74634f;background:#f1eeea;border:1px solid #cfc5b9;padding:5px 7px}
+  body.eg-sheet .eg-wt-basis-line {flex-wrap:wrap}
+  body.eg-sheet .eg-wt-basis-btn {border-radius:1px;background:#fffdf4;border:1px solid #c7bbad;padding:4px 8px;font-size:10px;color:#72614e}
+  body.eg-sheet .eg-wt-basis-btn.active {background:#655644;color:white;border-color:#655644}
+  body.eg-sheet .eg-dose-wt-badge {border-radius:1px;background:#eee8ca;color:#7a6537;font:10px ui-monospace,SFMono-Regular,Consolas,monospace;margin:0 8px;padding:3px 5px;letter-spacing:-.2px}
+  body.eg-sheet .info-col>.eg-dose-wt-badge {align-self:flex-end;margin:0}
+  body.eg-sheet .eg-clinician-chip {border:1px solid #d1c7bc;background:#efebe7;color:#695947;border-radius:2px;font-size:10px}
+  body.eg-sheet .eg-clinician-add {font-size:10px;border-radius:1px;border-color:#c5b9ab;color:#756450}
+  body.eg-sheet .eg-clinician-empty {font-size:10px;color:#96897a}
+  body.eg-sheet .section-divider {font-size:11px;background:#eeeae5;border:0;border-top:1px solid #d2c8bc;color:#705f4c;font-weight:600;padding:7px 0}
+  body.eg-sheet .history-grid,body.eg-sheet .pe-grid {font-size:11px;font-weight:500;gap:12px 16px}
+  body.eg-sheet .history-textarea {background:#fffef5;border:1px solid #d6cec4;border-radius:1px;padding:6px;font-size:12px;font-weight:400;min-height:42px}
+  body.eg-sheet .preop-checklist {border-radius:1px;border:1px solid #cec3b7;background:#f0ece8;color:#6e5e4b;font-size:11px;padding:8px 10px;flex-wrap:wrap;gap:14px}
+  body.eg-sheet .input-panel {order:4;display:grid;grid-template-columns:128px minmax(0,1fr);gap:0 15px;margin:12px 0 0;border:1px solid #bbae99;border-left:3px solid #655746;border-radius:0;box-shadow:none;padding:10px 12px;background:#f6f1e7}
+  .sheet-input-heading {grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ded7ce;margin-bottom:9px;padding-bottom:7px;font-size:11px;font-weight:700;letter-spacing:.3px;color:#574a3c}
+  .sheet-input-heading span {font-size:10px;color:#8d7d6a;font-weight:400;letter-spacing:0}
+  body.eg-sheet .sheet-times {gap:7px!important;border-right:1px solid #d9d1c8;padding-right:12px}
+  body.eg-sheet .sheet-divider {display:none!important}
+  body.eg-sheet .sheet-vitals {min-width:0;gap:9px!important}
+  body.eg-sheet .sheet-main-vitals {display:grid!important;grid-template-columns:repeat(11,minmax(0,1fr));gap:6px!important;align-items:end!important}
+  body.eg-sheet .sheet-main-vitals>div:not(.input-group) {display:none!important}
+  body.eg-sheet .input-group {width:auto!important;min-width:0}
+  body.eg-sheet .input-group label {font-size:9px;font-weight:550;color:#796b5b;margin-bottom:4px;letter-spacing:0}
+  body.eg-sheet .input-group input,body.eg-sheet .input-group select {border:1px solid #cbbfb2;border-radius:1px;background:#fffef5;height:33px;min-width:0;padding:5px;color:#443a2f;font:600 15px ui-monospace,SFMono-Regular,Consolas,monospace;text-align:center}
+  body.eg-sheet .input-group input::placeholder {font:10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#9a8c7b;opacity:1}
+  body.eg-sheet .time-group input {font-size:12px;background:#ede9e4;border-color:#b8a896;width:100%}
+  body.eg-sheet .text-time-group input {font-size:10px;height:28px;background:#f9f8f6}
+  body.eg-sheet .sheet-support-vitals {display:grid!important;grid-template-columns:180px 75px 120px;gap:9px!important}
+  body.eg-sheet .fluid-inputs {gap:3px}
+  body.eg-sheet .fluid-inputs select {flex:0 0 67px;width:67px;font-size:10px}
+  body.eg-sheet .fluid-inputs input {width:60px;min-width:0;flex:1}
+  body.eg-sheet .sheet-vitals>.plan-block {margin:0!important;border:1px solid #d4cbc1!important;border-radius:0;box-shadow:none;background:#fffef6}
+  body.eg-sheet .sheet-vitals>.plan-block:has(#tbody-intraop:empty) .plan-block-body {display:none}
+  body.eg-sheet .plan-block-header {background:#eeeae6!important;color:#665746;border-radius:0;padding:6px 9px;font-size:10px;font-weight:650;gap:8px}
+  body.eg-sheet .sheet-vitals>.plan-block .plan-block-header {min-height:30px;padding:4px 8px;background:#f0edea!important}
+  body.eg-sheet .drug-selector {border:1px solid #cabeb1!important;border-radius:1px;background:#fffef7!important;color:#705f4c!important;font-size:10px!important;width:175px;padding:4px 5px!important}
+  body.eg-sheet .btn-panel {grid-column:2;margin-top:8px;gap:7px;width:100%;justify-content:flex-end}
+  body.eg-sheet .btn-add {border-radius:1px;height:30px;padding:0 17px;background:#56493b;border:1px solid #56493b;font-size:11px;font-weight:600;box-shadow:none}
+  body.eg-sheet .btn-add:hover {background:#41372c}
+  body.eg-sheet .horizontal-times-bar {order:5;flex-wrap:wrap;gap:9px;border:1px solid #c6baac;border-top:0;border-radius:0;background:#f1eeeb;margin:0;padding:8px 10px;font-size:10px;font-weight:500}
+  body.eg-sheet .horizontal-times-bar>div:first-child {font-size:10px!important;font-weight:600!important;color:#72614d!important;margin-right:3px!important}
+  body.eg-sheet .time-event {font-size:10px;gap:4px;color:#7f6c57}
+  body.eg-sheet .time-event input {font:10px ui-monospace,SFMono-Regular,Consolas,monospace;border:0;border-bottom:1px solid #b9aa98;border-radius:0;background:transparent;color:#665746;padding:0 2px;outline:none}
+  .sheet-monitorbar {order:6;display:flex;align-items:center;gap:12px;margin:16px 0 0;border-top:2px solid #645646;border-bottom:1px solid #b2a28f;padding:7px 0;background:var(--paper)}
+  .sheet-monitorbar h2 {font-size:12px;white-space:nowrap;margin:0;color:#5c4e3e;letter-spacing:.8px;font-weight:700}
+  body.eg-sheet .chart-controls-panel {background:none;border:0;gap:5px;padding:0;margin:0;flex:1}
+  body.eg-sheet .chart-controls-panel>span {display:none}
+  body.eg-sheet .line-toggle-btn {border:0;border-bottom:2px solid #bbafa1;border-radius:0;background:none;padding:4px 5px;font-size:10px;font-weight:500;color:#84725e}
+  body.eg-sheet .line-toggle-btn:nth-of-type(1) {border-bottom-color:#cf6b70}
+  body.eg-sheet .line-toggle-btn:nth-of-type(2),body.eg-sheet .line-toggle-btn:nth-of-type(3),body.eg-sheet .line-toggle-btn:nth-of-type(4) {border-bottom-color:#789dbb}
+  body.eg-sheet .line-toggle-btn:nth-of-type(5) {border-bottom-color:#bb97c6}
+  body.eg-sheet .line-toggle-btn:nth-of-type(6) {border-bottom-color:#cba365}
+  body.eg-sheet .line-toggle-btn.active {background:#e8e2dc;color:#5f5140}
+  body.eg-sheet .pagination-panel {background:none;border:0;padding:0;margin:0;font-size:0;gap:5px;display:flex;align-items:center}
+  body.eg-sheet .page-btn {font-size:9px;font-weight:500;border:1px solid #c5b8a9;background:#fffdf4;color:#7d6a55;border-radius:1px;padding:5px 7px;white-space:nowrap}
+  body.eg-sheet .page-btn.active {background:#e9e4de;border-color:#c8bcaf;color:#635443}
+  body.eg-sheet #btn-add-next-page {color:#72614e!important;background:#f0ede9!important;border-color:#c5b8a9!important}
+  body.eg-sheet #grids-wrapper {order:7;overflow-x:auto;scroll-margin-top:10px;background:#fffdf6;border:1px solid #bfb1a0;border-top:0;padding:0}
+  body.eg-sheet .page-view {min-width:1080px}
+  body.eg-sheet .record-table {table-layout:fixed}
+  body.eg-sheet .record-table td {height:21px;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;border-color:#c7bbad;background:#fffdf5;padding:0;color:#4f4336}
+  body.eg-sheet .record-table tr:nth-child(even) td {background:#f7f6f4}
+  body.eg-sheet .record-table tr:first-child td {height:25px;background:#e9e4de;color:#625342;font-size:10px;font-weight:600;border-bottom:1px solid #a8957f}
+  body.eg-sheet .record-table td.row-header {width:85px;max-width:85px;min-width:85px;border-right:1px solid #a4907a;background:#eeeae5!important;color:#73624e!important;text-align:right;padding-right:7px;font:600 9px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;letter-spacing:.1px}
+  body.eg-sheet .data-cell {font-variant-numeric:tabular-nums;line-height:1.05;word-break:normal;font-weight:550}
+  body.eg-sheet .data-cell:focus {background:#ede9e4!important;outline:1px solid #a38f78}
+  body.eg-sheet .chart-wrapper {border-top:1px solid #a38f79;border-bottom:1px solid #a38f79;background:#fffdf7}
+  body.eg-sheet canvas {height:245px!important;background:#fffdf7}
+  body.eg-sheet .bottom-split-panel {padding:12px 10px;background:#fffdf6;gap:16px;border-top:1px solid #bdaf9f!important}
+  body.eg-sheet .comments-title {font-size:10px;font-weight:650;color:#6e5e4b;letter-spacing:.2px}
+  body.eg-sheet .comments-box {border:0;border-bottom:1px solid #c8bcae;border-radius:0;background:repeating-linear-gradient(#fffdf6 0 22px,#e5dfd9 22px 23px);font-size:12px;padding:5px 0;line-height:23px;min-height:65px;color:#5d4f3f}
+  body.eg-sheet .bolus-section {border-left:1px solid #c8bcaf;padding-left:16px}
+  body.eg-sheet .bolus-record-table th {background:#ede9e5;color:#836f59;font-size:9px;font-weight:500;border-color:#c8bbad;padding:4px}
+  body.eg-sheet .bolus-record-table td {border-color:#d0c6ba;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#594b3c;padding:5px}
+  body.eg-sheet .btn-bolus-del {border-radius:0;border-color:#d0c6ba;color:#9c948b}
+  body.eg-sheet .plan-header-global {border:0;margin:0 0 12px;padding:0;gap:8px}
+  body.eg-sheet .plan-header-global h3 {font-size:13px;font-weight:600;color:#5f5140}
+  body.eg-sheet .btn-toggle-all {font-size:10px;background:#eeeae5;color:#7c6a55;border:1px solid #cabeb1;border-radius:1px;padding:4px 7px}
+  body.eg-sheet .plan-block {border-radius:0;box-shadow:none;border-color:#cbc0b3;margin-bottom:10px}
+  body.eg-sheet .plan-block-body {overflow-x:auto}
+  body.eg-sheet .med-table {font-size:11px}
+  body.eg-sheet .med-table th {background:#f3f0ed;border:0;border-bottom:1px solid #d8cfc5;color:#8a755e;font-size:10px;padding:7px 4px;font-weight:500}
+  body.eg-sheet .med-table td {padding:6px 4px;border-color:#e2dcd5}
+  body.eg-sheet .med-table input,body.eg-sheet .med-table select {background:#fffef5;border:1px solid #d0c6bb;border-radius:1px;padding:5px;font-size:12px;font-weight:500;min-height:29px;color:#584b3c}
+  body.eg-sheet .med-table .calc-result {background:#eeeae5!important;color:#5d4f3f!important;font-weight:700;border-color:#c9bdb0}
+  body.eg-sheet .drug-reference {font-size:9px;color:#947f66;font-weight:400}
+  body.eg-sheet .med-table:has(#tbody-cri) {table-layout:auto;min-width:1050px}
+  body.eg-sheet #tbody-cri td:nth-child(8) {min-width:210px;width:210px}
+  body.eg-sheet #tbody-cri .c-wt {min-width:94px}
+  body.eg-sheet .cri-result-panel {border-radius:0;background:#f0ece8;border-color:#d5ccc1;font-size:10px;line-height:1.6;padding:8px;color:#6c5c49}
+  body.eg-sheet .plan-notes {font-size:10px;font-weight:400;background:#f8f7f5;border-radius:0;border-top:1px solid #ddd6ce;min-height:31px;padding:8px 10px}
+  body.eg-sheet .btn-toggle-block {font-size:15px;color:#947e65}
+  body.eg-sheet .btn-del {font-size:15px;color:#aa9d82}
+  body.eg-sheet .cri-note-box {border:0;border-radius:0;font-size:10px;font-weight:400;line-height:1.6;background:#f1eeea;color:#88745d}
+  body.eg-sheet .bottom-export-panel {order:8;justify-content:flex-end;gap:8px;margin:12px 0 0;padding-top:9px;border-top:1px solid #c6baac;flex-wrap:wrap}
+  body.eg-sheet .btn-export {height:30px;padding:0 12px;border:1px solid #c5b8a9;border-radius:1px;box-shadow:none;background:#fffdf3;color:#7c6a55;font-size:10px;font-weight:550}
+  body.eg-sheet .btn-export:hover {transform:none;background:#ede9e4}
+  body.eg-sheet .btn-export-pdf {color:#fffdf5;background:#625443;border-color:#625443}
+  @media (max-width:1200px) {
+    body.eg-sheet {padding:12px}
+    body.eg-sheet .app-container {padding:0 13px 13px}
+    .sheet-caseband {gap:4px 0}.sheet-case-actions{width:100%;justify-content:flex-end;margin-top:5px}
+    body.eg-sheet .sheet-main-vitals {grid-template-columns:repeat(6,minmax(0,1fr))}
+    .sheet-monitorbar {flex-wrap:wrap}.sheet-monitorbar .pagination-panel{margin-left:auto}
+  }
+  @media (max-width:760px) {
+    body.eg-sheet {padding:0 0 22px}.sheet-masthead{gap:12px;flex-wrap:wrap;padding:12px 0}.sheet-wordmark{padding-right:12px}.sheet-wordmark strong{font-size:21px}.sheet-title h1{font-size:18px}.sheet-tools{width:100%;margin-left:0;align-items:flex-start;gap:7px;flex-direction:row;justify-content:space-between;flex-wrap:wrap}.sheet-view-tools{order:2}.sheet-caseband{gap:3px 0;padding:10px 0}.sheet-case-name{font-size:16px}.sheet-case-id{font-size:10px;margin-right:0}.sheet-case-item{font-size:10px;padding:0 9px}.sheet-case-item strong{font-size:13px}.sheet-case-actions button{font-size:9px;padding:5px 8px}.sheet-case-actions{margin-top:5px}
+    body.eg-sheet .app-container{padding:0 10px 10px;border-left:0;border-right:0;box-shadow:none}
+    body.eg-sheet .input-panel{grid-template-columns:1fr;gap:9px;padding:9px;border-left-width:2px}
+    body.eg-sheet .sheet-times{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px!important;border:0;padding:0}
+    body.eg-sheet .sheet-main-vitals{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px!important}
+    body.eg-sheet .sheet-support-vitals{grid-template-columns:1.4fr .65fr 1fr;gap:7px!important}
+    body.eg-sheet .fluid-inputs select{flex-basis:48px;width:48px;font-size:9px;padding:3px}.sheet-input-heading{margin-bottom:0}
+    body.eg-sheet .btn-panel{grid-column:1;margin-top:0}
+    body.eg-sheet .sheet-vitals>.plan-block .plan-block-header{flex-wrap:wrap}
+    body.eg-sheet .input-panel .med-table{min-width:680px}
+    body.eg-sheet .horizontal-times-bar{display:grid;grid-template-columns:1fr 1fr;padding:8px;gap:8px}
+    body.eg-sheet .horizontal-times-bar>div:first-child{grid-column:1/-1}
+    body.eg-sheet .time-event{display:flex;flex-wrap:wrap;gap:4px}
+    body.eg-sheet .time-event input{max-width:100%;font-size:10px}
+    .sheet-monitorbar{gap:7px;padding:7px 0}.sheet-monitorbar h2{font-size:11px}.sheet-monitorbar .chart-controls-panel{order:3;flex-basis:100%;gap:3px}.sheet-monitorbar .line-toggle-btn{font-size:9px;padding:4px}
+    body.eg-sheet .header-grid{grid-template-columns:1fr;gap:10px}
+    body.eg-sheet .history-grid{grid-template-columns:1fr}
+    body.eg-sheet .pe-grid{grid-template-columns:minmax(0,1fr)!important}
+    body.eg-sheet .pe-grid>div{min-width:0;grid-column:auto!important;flex-wrap:wrap;gap:6px}
+    body.eg-sheet .ucd-top-info,body.eg-sheet .plan-container{padding:12px 8px}
+    body.eg-sheet .plan-block-header{flex-wrap:wrap}
+    body.eg-sheet .plan-block-header>div{min-width:0;max-width:100%;margin-left:auto;display:flex;gap:5px}
+    body.eg-sheet .plan-block-body>.med-table{min-width:740px}
+    body.eg-sheet .plan-header-global{flex-wrap:wrap}
+    body.eg-sheet .drug-selector{max-width:100%;width:155px;font-size:9px!important}
+  }
+}
+@media print {
+  .sheet-masthead,.sheet-caseband,.sheet-input-heading,.sheet-monitorbar>h2,.sheet-rail-nav {display:none!important}
+}
+@media screen {
+  .sheet-rail-nav {display:none}
+  @media (min-width:761px) {
+    body.eg-sheet.sheet-rail {padding-left:86px}
+    .eg-sheet.sheet-rail .sheet-case-actions {display:none}
+    .eg-sheet.sheet-rail .sheet-rail-nav {position:fixed;left:22px;top:125px;display:flex;flex-direction:column;width:46px;border:1px solid #bbae99;background:#ece3d6;z-index:100}
+    .sheet-rail-nav button {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:63px;padding:8px 3px;border:0;border-bottom:1px solid #c9bca9;background:transparent;color:#7f6c55;font-size:11px;letter-spacing:1px}
+    .sheet-rail-nav button:last-child {border-bottom:0}
+    .sheet-rail-nav button small {font:9px ui-monospace,SFMono-Regular,Consolas,monospace;color:#98836a;letter-spacing:0}
+    .sheet-rail-nav button:hover {background:#e0d3bf}
+    .sheet-rail-nav button[aria-current] {background:#786148;color:#fff8ed}
+    .sheet-rail-nav button[aria-current] small {color:#d9cbb5}
+    .sheet-rail-nav button:focus-visible {outline:2px solid #9c7450;outline-offset:2px}
+  }
+  @media (max-width:760px) {#sheet-rail-toggle {display:none}}
+  body.eg-sheet .eg-dose-wt-badge {background:#eee1ca;color:#7c603b}
+  body.eg-sheet .sheet-case-item.sheet-dose,body.eg-sheet .sheet-case-item.sheet-dose strong {color:#936747}
+  body.eg-sheet .input-panel {border-left-color:#967456}
+  body.eg-sheet .eg-v21-agent-row {display:grid!important;grid-template-columns:51px minmax(30px,1fr);gap:3px!important;min-width:0}
+  body.eg-sheet .eg-v21-agent-row select {width:100%!important;min-width:0!important;font-size:11px!important;padding:3px!important}
+  body.eg-sheet .eg-v21-agent-row input {width:100%!important;min-width:0!important;font-size:13px!important;padding:3px!important}
+  body.eg-sheet .btn-add {background:#80654b;border-color:#80654b}
+  body.eg-sheet .btn-add:hover {background:#68503b}
+  body.eg-sheet .btn-export-pdf {background:#80654b;border-color:#80654b}
+  body.eg-sheet .eg-dosing-weight-input[aria-invalid="true"]:not([data-sheet-empty="true"]) {background:#faeee5;border-color:#a6694c;color:#8d4931}
+}
+</style>
+<script id="eg-earth-ui">(() => {
+  const byId=id=>document.getElementById(id);
+  function init() {
+    document.body.classList.add('eg-sheet','sheet-rail');
+    const app=document.querySelector('.app-container');
+    const masthead=document.createElement('header');masthead.className='sheet-masthead';
+    masthead.innerHTML='<div class="sheet-wordmark"><strong>Evergreen</strong><small>長青動物醫院</small></div><div class="sheet-title"><h1>麻醉紀錄</h1><small>ANESTHESIA RECORD</small></div><div class="sheet-tools"><div class="sheet-view-tools"><button type="button" id="sheet-rail-toggle" aria-pressed="true" aria-controls="sheet-rail-nav">隱藏側欄</button></div><div id="sheet-save"></div></div>';
+    const caseband=document.createElement('section');caseband.className='sheet-caseband';caseband.setAttribute('aria-label','病患與體重');
+    caseband.innerHTML='<strong class="sheet-case-name" id="sheet-name">—</strong><span class="sheet-case-id" id="sheet-id">—</span><span class="sheet-case-item" id="sheet-species">—</span><span class="sheet-case-item">Actual<strong id="sheet-actual">—</strong><small>kg</small></span><span class="sheet-case-item sheet-dose">Bolus/Plan<strong id="sheet-dose">—</strong><small id="sheet-basis">kg · Dosing</small></span><div class="sheet-case-actions"><button type="button" id="sheet-patient" aria-expanded="false">病患／術前資料</button><button type="button" id="sheet-plan" aria-expanded="false">麻醉計畫</button><button type="button" id="sheet-export">匯出</button></div>';
+    app.prepend(masthead,caseband);
+    const rail=document.createElement('nav');rail.id='sheet-rail-nav';rail.className='sheet-rail-nav';rail.setAttribute('aria-label','快速導覽');
+    rail.innerHTML='<button type="button" data-section="monitor" aria-current="location"><small>01</small>監測</button><button type="button" data-section="patient"><small>02</small>病患</button><button type="button" data-section="plan"><small>03</small>計畫</button><button type="button" data-section="export"><small>04</small>匯出</button>';
+    document.body.prepend(rail);
+    byId('sheet-rail-toggle').addEventListener('click',()=>{
+      const open=document.body.classList.toggle('sheet-rail');
+      byId('sheet-rail-toggle').textContent=open?'隱藏側欄':'顯示側欄';
+      byId('sheet-rail-toggle').setAttribute('aria-pressed',String(open));
+    });
+    rail.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{
+      rail.querySelectorAll('button').forEach(b=>b.removeAttribute('aria-current'));button.setAttribute('aria-current','location');
+      const target=button.dataset.section;
+      if(target==='patient'){
+        if(!document.body.classList.contains('sheet-patient-open'))toggle('sheet-patient','sheet-patient-open');
+        document.querySelector('.ucd-top-info').scrollIntoView({behavior:'smooth',block:'start'});
+      }else if(target==='plan'){
+        if(!document.body.classList.contains('sheet-plan-open'))toggle('sheet-plan','sheet-plan-open');
+        document.querySelector('.plan-container').scrollIntoView({behavior:'smooth',block:'start'});
+      }else if(target==='export')document.querySelector('.bottom-export-panel').scrollIntoView({behavior:'smooth',block:'center'});
+      else document.querySelector('.input-panel').scrollIntoView({behavior:'smooth',block:'start'});
+    }));
+    if(byId('eg-save-bar'))byId('sheet-save').append(byId('eg-save-bar'));
+    const input=document.querySelector('.input-panel');
+    input.children[0].classList.add('sheet-times');input.children[1].classList.add('sheet-divider');
+    const vitals=input.children[2];vitals.classList.add('sheet-vitals');vitals.children[0].classList.add('sheet-main-vitals');vitals.children[1].classList.add('sheet-support-vitals');
+    const heading=document.createElement('div');heading.className='sheet-input-heading';heading.innerHTML='本次監測<span id="sheet-last">尚無紀錄</span>';input.prepend(heading);
+    input.querySelector('.btn-add').textContent='登錄本次紀錄 ↓';
+    const bar=document.createElement('section');bar.className='sheet-monitorbar';bar.innerHTML='<h2>監測紀錄</h2>';
+    bar.append(document.querySelector('.chart-controls-panel'),document.querySelector('.pagination-panel'));app.append(bar);
+    byId('sheet-patient').addEventListener('click',()=>toggle('sheet-patient','sheet-patient-open'));
+    byId('sheet-plan').addEventListener('click',()=>toggle('sheet-plan','sheet-plan-open'));
+    byId('sheet-export').addEventListener('click',()=>document.querySelector('.bottom-export-panel').scrollIntoView({behavior:'smooth',block:'center'}));
+    let frame=null;
+    const update=()=>{if(frame)return;frame=requestAnimationFrame(()=>{frame=null;refresh();});};
+    document.addEventListener('input',update);document.addEventListener('change',update);document.addEventListener('click',update);
+    new MutationObserver(update).observe(byId('grids-wrapper'),{subtree:true,childList:true,characterData:true});
+    ready();
+  }
+  function toggle(id,cls) {const open=document.body.classList.toggle(cls);byId(id).setAttribute('aria-expanded',String(open));}
+  function refresh() {
+    byId('sheet-name').textContent=byId('patient-name').value||'姓名未填';byId('sheet-id').textContent=byId('patient-id').value||'病歷號未填';
+    const species=byId('patient-species').value;byId('sheet-species').textContent=({Canine:'犬',Feline:'貓'})[species]||species||'物種未填';
+    byId('sheet-actual').textContent=byId('patient-weight').value||'—';
+    const m=(document.querySelector('.eg-dose-wt-badge')?.textContent||'').match(/Dose BW: (.+) kg \((.+)\)/);
+    byId('sheet-dose').textContent=m&&m[1]!=='--'?m[1]:'—';byId('sheet-basis').textContent='kg · '+(m?m[2]:'Dosing');
+    document.querySelectorAll('.eg-dosing-weight-input').forEach(el=>el.dataset.sheetEmpty=String(!el.textContent.trim()));
+    const times=[...document.querySelectorAll('[id^="row-time-"]')].filter(el=>/^row-time-\d+$/.test(el.id)&&el.textContent.trim()&&el.textContent.trim()!=='-');
+    byId('sheet-last').textContent=times.length?`最近登錄 ${times[times.length-1].textContent}　／　${times.length} 筆`:'尚無紀錄';
+  }
+  function ready() {
+    if (!window.EGSave?.config.serialize()) { setTimeout(ready, 100); return; }
+    // Keep the view in sync after an existing JSON/draft restore.
+    const deserialize = EGSave.config.deserialize;
+    EGSave.config.deserialize = function(...args) {
+      const result = deserialize.apply(this, args);
+      refresh();
+      return result;
+    };
+    refresh();
+    console.info('[EverGreen] Earth UI 20261127 loaded');
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+</script>
 </body>
 </html>
